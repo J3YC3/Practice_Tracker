@@ -617,11 +617,12 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
         setNotice(result.error ?? "Unable to update attendance.");
         return;
       }
-      setNotice("");
+      setNotice(reason !== undefined ? "Reason updated successfully." : "Attendance status updated successfully.");
       await persist("attendance", "attendance_records", result.record, { skipRemote: true });
       return;
     }
     await persist("attendance", "attendance_records", row);
+    setNotice(reason !== undefined ? "Reason updated successfully." : "Attendance status updated successfully.");
   }
 
   const currentAttendance = data.attendance.filter((record) => record.session_id === sessionId);
@@ -1258,11 +1259,12 @@ function WorkoutPanel({ data, sessionId, setSessionId, permission, persist, setN
         setNotice(result.error ?? "Unable to update workout.");
         return;
       }
-      setNotice("");
+      setNotice("Workout status updated successfully.");
       await persist("workouts", "workout_records", result.record, { skipRemote: true });
       return;
     }
     await persist("workouts", "workout_records", row);
+    setNotice("Workout status updated successfully.");
   }
 
   return (
