@@ -8,7 +8,6 @@ import {
   ClipboardCheck,
   Dumbbell,
   LineChart,
-  LogIn,
   LogOut,
   Plus,
   Save,
@@ -353,7 +352,6 @@ export default function TeamTracker() {
       <main className="flex min-h-screen items-center justify-center px-4">
         <section className="w-full max-w-sm rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-md bg-moss text-white"><LogIn size={20} /></div>
             <div>
               <h1 className="text-xl font-semibold">Ex Senior Tracker</h1>
               <p className="text-sm text-ink/60">{authMode === "login" ? "Admin and member login" : "Member sign up"}</p>
