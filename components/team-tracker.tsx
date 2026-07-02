@@ -13,6 +13,7 @@ import {
   Plus,
   Save,
   Shield,
+  Trash2,
   Users
 } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -178,6 +179,20 @@ export default function TeamTracker() {
     });
   }
 
+  async function remove<T extends keyof TeamData>(key: T, table: string, rowId: string) {
+    if (supabase && isSupabaseConfigured && isAuthed) {
+      const { error } = await supabase.from(table).delete().eq("id", rowId);
+      if (error) {
+        setNotice(error.message);
+        return;
+      }
+    }
+    setData((current) => ({
+      ...current,
+      [key]: (current[key] as Array<{ id: string }>).filter((item) => item.id !== rowId)
+    }));
+  }
+
   const memberRows = useMemo(() => data.members.map((member) => {
     const records = data.attendance.filter((record) => record.member_id === member.id);
     const counted = records.filter((record) => record.status === "present" || record.status === "late").length;
@@ -291,7 +306,7 @@ export default function TeamTracker() {
           </div>
 
           {activeTab === "attendance" && <AttendancePanel data={data} currentSession={currentSession} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
-          {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} setSelectedMemberId={setSelectedMemberId} />}
+          {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} remove={remove} setSelectedMemberId={setSelectedMemberId} />}
           {activeTab === "workout" && <WorkoutPanel data={data} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
           {activeTab === "reviews" && <ReviewsPanel data={data} selectedMemberId={selectedMemberId} setSelectedMemberId={setSelectedMemberId} permission={permission} persist={persist} />}
         </section>
@@ -444,7 +459,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
   );
 }
 
-function MembersPanel({ data, permission, persist, setSelectedMemberId }: { data: TeamData; permission: Permission; persist: Persist; setSelectedMemberId: (value: string) => void }) {
+function MembersPanel({ data, permission, persist, remove, setSelectedMemberId }: { data: TeamData; permission: Permission; persist: Persist; remove: <T extends keyof TeamData>(key: T, table: string, rowId: string) => Promise<void>; setSelectedMemberId: (value: string) => void }) {
   const [form, setForm] = useState({ name: "", role: "Member", group_name: "General", phone: "" });
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
@@ -486,6 +501,13 @@ function MembersPanel({ data, permission, persist, setSelectedMemberId }: { data
     await persist("profiles", "profiles", row);
   }
 
+  async function deleteMember(member: Member) {
+    if (!permission.isAdmin) return;
+    const linkedProfiles = data.profiles.filter((profile) => profile.member_id === member.id);
+    await Promise.all(linkedProfiles.map((profile) => persist("profiles", "profiles", { ...profile, member_id: undefined })));
+    await remove("members", "members", member.id);
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-ink/10 bg-white p-4">
@@ -501,8 +523,17 @@ function MembersPanel({ data, permission, persist, setSelectedMemberId }: { data
         <div className="grid gap-2 md:grid-cols-2">
           {data.members.map((member) => (
             <div key={member.id} className={`rounded-md border border-ink/10 p-3 ${canEditMember(permission, member.id) ? "bg-paper" : "bg-ink/5"}`}>
-              <div className="font-medium">{member.name}</div>
-              <div className="text-sm text-ink/60">{member.role} · {member.group_name}</div>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{member.name}</div>
+                  <div className="text-sm text-ink/60">{member.role} · {member.group_name}</div>
+                </div>
+                {permission.isAdmin && (
+                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white" onClick={() => deleteMember(member)} aria-label={`Delete ${member.name}`}>
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
