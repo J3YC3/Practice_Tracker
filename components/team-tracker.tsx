@@ -71,6 +71,13 @@ function profileLabel(profile: UserProfile) {
   return profile.display_name || profile.email || "Unnamed user";
 }
 
+function resolveMemberId(profile: UserProfile, members: Member[]) {
+  if (profile.member_id) return profile.member_id;
+  const profileName = profile.display_name.trim().toLowerCase();
+  if (!profileName) return undefined;
+  return members.find((member) => member.name.trim().toLowerCase() === profileName)?.id;
+}
+
 export default function TeamTracker() {
   const [data, setData] = useState<TeamData>(sampleData);
   const [sessionId, setSessionId] = useState(sampleData.sessions[0]?.id ?? "");
@@ -94,8 +101,8 @@ export default function TeamTracker() {
   const permission = useMemo<Permission>(() => ({
     profile,
     isAdmin: isAdminProfile(profile),
-    memberId: profile.member_id
-  }), [profile]);
+    memberId: resolveMemberId(profile, data.members)
+  }), [data.members, profile]);
 
   useEffect(() => {
     async function boot() {
@@ -594,6 +601,9 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
     excused: currentAttendance.filter((record) => record.status === "excused").length,
     notMarked: Math.max(data.members.length - currentAttendance.length, 0)
   };
+  const visibleMembers = permission.isAdmin
+    ? data.members
+    : data.members.filter((member) => member.id === permission.memberId);
 
   return (
     <section className="rounded-lg border border-ink/10 bg-white p-4">
@@ -659,7 +669,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
           <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
             <thead className="text-left text-ink/55"><tr><th className="px-3">Member</th><th>Group</th><th>Status</th><th>Reason</th></tr></thead>
             <tbody>
-              {data.members.map((member) => {
+              {visibleMembers.map((member) => {
                 const record = data.attendance.find((item) => item.member_id === member.id && item.session_id === sessionId);
                 const editable = canEditMember(permission, member.id);
                 const needsReason = record?.status === "late" || record?.status === "absent";
@@ -696,6 +706,11 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
                   </tr>
                 );
               })}
+              {!visibleMembers.length && (
+                <tr className="bg-paper">
+                  <td className="rounded-md px-3 py-3 text-ink/60" colSpan={4}>Your login is not linked to a member profile yet. Ask an admin to link your account in Login Access Linking.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
