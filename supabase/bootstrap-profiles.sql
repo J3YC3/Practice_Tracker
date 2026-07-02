@@ -6,7 +6,7 @@ insert into profiles (user_id, role, display_name, email, require_password_reset
 select id, 'admin', 'Jun Wei', email, false
 from auth.users
 where email = 'admin@example.com'
-on conflict (user_id) do update
+on conflict (user_id, role) do update
 set role = 'admin',
     display_name = excluded.display_name,
     email = excluded.email,
@@ -27,7 +27,7 @@ user_row as (
 insert into profiles (user_id, member_id, role, display_name, email, require_password_reset)
 select user_row.user_id, member_row.id, 'member', 'Jun Wei', 'junwei@example.com', true
 from user_row, member_row
-on conflict (user_id) do update
+on conflict (user_id, role) do update
 set member_id = excluded.member_id,
     role = 'member',
     display_name = excluded.display_name,

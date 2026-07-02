@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       display_name: username,
       email,
       require_password_reset: false
-    }, { onConflict: "user_id" });
+    }, { onConflict: "user_id,role" });
 
   if (profileError) return jsonError(profileError.message, 500);
 

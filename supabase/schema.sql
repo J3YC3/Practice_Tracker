@@ -19,7 +19,7 @@ end $$;
 
 create table if not exists profiles (
   id uuid primary key default uuid_generate_v4(),
-  user_id uuid unique references auth.users(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
   member_id uuid references members(id) on delete set null,
   role user_role not null default 'member',
   display_name text not null default '',
@@ -30,6 +30,8 @@ create table if not exists profiles (
 
 alter table profiles add column if not exists email text;
 alter table profiles add column if not exists require_password_reset boolean not null default false;
+alter table profiles drop constraint if exists profiles_user_id_key;
+create unique index if not exists profiles_user_role_unique on profiles(user_id, role);
 
 create table if not exists training_sessions (
   id uuid primary key default uuid_generate_v4(),
@@ -114,7 +116,10 @@ language sql
 security definer
 set search_path = public
 as $$
-  select member_id from profiles where user_id = auth.uid();
+  select member_id
+  from profiles
+  where user_id = auth.uid() and member_id is not null
+  limit 1;
 $$;
 
 create or replace function handle_new_user()
@@ -132,7 +137,7 @@ begin
     new.email,
     false
   )
-  on conflict (user_id) do update
+  on conflict (user_id, role) do update
   set email = excluded.email,
       display_name = case
         when profiles.display_name = '' then excluded.display_name

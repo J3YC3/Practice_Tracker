@@ -27,7 +27,8 @@ export async function POST(request: NextRequest) {
     .from("profiles")
     .select("role")
     .eq("user_id", authData.user.id)
-    .single();
+    .eq("role", "admin")
+    .maybeSingle();
 
   if (requesterError || requesterProfile?.role !== "admin") {
     return jsonError("Only admin can delete login accounts.", 403);

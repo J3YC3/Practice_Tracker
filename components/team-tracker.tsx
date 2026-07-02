@@ -85,11 +85,16 @@ export default function TeamTracker() {
   const [isAuthed, setIsAuthed] = useState(!isSupabaseConfigured);
   const [profile, setProfile] = useState<UserProfile>(sampleData.profiles[0]);
 
+  const currentProfiles = useMemo(() => {
+    if (!profile.user_id) return [profile];
+    return data.profiles.filter((item) => item.user_id === profile.user_id);
+  }, [data.profiles, profile]);
+
   const permission = useMemo<Permission>(() => ({
     profile,
-    isAdmin: profile.role === "admin",
-    memberId: profile.member_id
-  }), [profile]);
+    isAdmin: currentProfiles.some((item) => item.role === "admin"),
+    memberId: currentProfiles.find((item) => item.member_id)?.member_id
+  }), [currentProfiles, profile]);
 
   useEffect(() => {
     async function boot() {
@@ -141,8 +146,8 @@ export default function TeamTracker() {
       reviews: reviews.data ?? []
     };
     setData(nextData);
-    const currentProfile = nextData.profiles.find((item) => item.user_id === userId);
-    setProfile(currentProfile ?? unlinkedProfile);
+    const currentUserProfiles = nextData.profiles.filter((item) => item.user_id === userId);
+    setProfile(currentUserProfiles.find((item) => item.role === "admin") ?? currentUserProfiles[0] ?? unlinkedProfile);
     setSessionId(nextData.sessions[0]?.id ?? "");
     setSelectedMemberId(nextData.members[0]?.id ?? "");
   }
@@ -721,32 +726,46 @@ function MembersPanel({
   const [adminForm, setAdminForm] = useState(defaultAccountForm);
   const [submittedAdd, setSubmittedAdd] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [memberAddMode, setMemberAddMode] = useState<"new" | "existing">("new");
+  const [existingMemberProfileId, setExistingMemberProfileId] = useState("");
   const [submittedAdminAdd, setSubmittedAdminAdd] = useState(false);
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
+  const [adminAddMode, setAdminAddMode] = useState<"new" | "existing">("new");
+  const [existingAdminProfileId, setExistingAdminProfileId] = useState("");
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
+
+  const existingLoginProfiles = Array.from(
+    new Map(data.profiles.filter((item) => item.user_id).map((item) => [item.user_id, item])).values()
+  );
 
   async function addAccount(accountRole: UserProfile["role"]) {
     if (!permission.isAdmin) return;
     const form = accountRole === "admin" ? adminForm : memberForm;
+    const addMode = accountRole === "admin" ? adminAddMode : memberAddMode;
+    const existingProfileId = accountRole === "admin" ? existingAdminProfileId : existingMemberProfileId;
     if (accountRole === "admin") setSubmittedAdminAdd(true);
     else setSubmittedAdd(true);
     setNotice("");
-    if (!form.name.trim()) {
+    if (addMode === "existing" && !existingProfileId) {
+      setNotice("Select an existing login first.");
+      return;
+    }
+    if (addMode === "new" && !form.name.trim()) {
       setNotice(`${accountRole === "admin" ? "Admin" : "Member"} name is required.`);
       return;
     }
-    if (isSupabaseConfigured && !form.email.trim()) {
+    if (addMode === "new" && isSupabaseConfigured && !form.email.trim()) {
       setNotice("Member email is required.");
       return;
     }
-    if (isSupabaseConfigured && form.defaultPassword.length < 6) {
+    if (addMode === "new" && isSupabaseConfigured && form.defaultPassword.length < 6) {
       setNotice("Default password must be at least 6 characters.");
       return;
     }
 
     const normalizedName = form.name.trim().toLowerCase();
     const normalizedGroup = form.group_name.trim().toLowerCase();
-    const localExisting = accountRole === "member"
+    const localExisting = addMode === "new" && accountRole === "member"
       ? data.members.find((member) => (
         member.name.trim().toLowerCase() === normalizedName &&
         member.group_name.trim().toLowerCase() === normalizedGroup
@@ -779,7 +798,8 @@ function MembersPanel({
           defaultPassword: form.defaultPassword,
           memberRole: form.role,
           groupName: form.group_name,
-          accountRole
+          accountRole,
+          existingProfileId: addMode === "existing" ? existingProfileId : undefined
         })
       });
       const result = await response.json() as { error?: string; member?: Member; profile?: UserProfile };
@@ -800,10 +820,14 @@ function MembersPanel({
         setAdminForm(defaultAccountForm);
         setSubmittedAdminAdd(false);
         setIsAddAdminOpen(false);
+        setAdminAddMode("new");
+        setExistingAdminProfileId("");
       } else {
         setMemberForm(defaultAccountForm);
         setSubmittedAdd(false);
         setIsAddOpen(false);
+        setMemberAddMode("new");
+        setExistingMemberProfileId("");
       }
       setNotice(`${accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
       return;
@@ -918,19 +942,35 @@ function MembersPanel({
               <div className="flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Add Member</h2></div>
               <button className="focus-ring rounded-md border border-ink/15 px-3 py-2 text-sm" onClick={() => setIsAddOpen(false)}>Close</button>
             </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <button className={`focus-ring rounded-md px-3 py-2 text-sm ${memberAddMode === "new" ? "bg-moss text-white" : "border border-ink/15"}`} onClick={() => setMemberAddMode("new")}>New login</button>
+              <button className={`focus-ring rounded-md px-3 py-2 text-sm ${memberAddMode === "existing" ? "bg-moss text-white" : "border border-ink/15"}`} onClick={() => setMemberAddMode("existing")}>Existing login</button>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !memberForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !memberForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={memberForm.defaultPassword} onChange={(event) => setMemberForm({ ...memberForm, defaultPassword: event.target.value })} />
-              </label>
+              {memberAddMode === "existing" ? (
+                <label className="md:col-span-2">
+                  <span className="mb-1 block text-xs text-ink/60">Existing login <span className="text-clay">*</span></span>
+                  <select className={`focus-ring w-full rounded-md border bg-white px-3 py-2 ${submittedAdd && !existingMemberProfileId ? "border-clay" : "border-ink/15"}`} value={existingMemberProfileId} onChange={(event) => setExistingMemberProfileId(event.target.value)}>
+                    <option value="">Select existing user</option>
+                    {existingLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label>
+                    <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
+                    <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !memberForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                    <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !memberForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} />
+                  </label>
+                  <label className="md:col-span-2">
+                    <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                    <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={memberForm.defaultPassword} onChange={(event) => setMemberForm({ ...memberForm, defaultPassword: event.target.value })} />
+                  </label>
+                </>
+              )}
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Member role</span>
                 <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
@@ -981,19 +1021,35 @@ function MembersPanel({
               <div className="flex items-center gap-2"><Shield size={18} className="text-moss" /><h2 className="font-semibold">Add Admin</h2></div>
               <button className="focus-ring rounded-md border border-ink/15 px-3 py-2 text-sm" onClick={() => setIsAddAdminOpen(false)}>Close</button>
             </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <button className={`focus-ring rounded-md px-3 py-2 text-sm ${adminAddMode === "new" ? "bg-moss text-white" : "border border-ink/15"}`} onClick={() => setAdminAddMode("new")}>New login</button>
+              <button className={`focus-ring rounded-md px-3 py-2 text-sm ${adminAddMode === "existing" ? "bg-moss text-white" : "border border-ink/15"}`} onClick={() => setAdminAddMode("existing")}>Existing login</button>
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && !adminForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Admin name" value={adminForm.name} onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })} />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && isSupabaseConfigured && !adminForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="admin@email.com" value={adminForm.email} onChange={(event) => setAdminForm({ ...adminForm, email: event.target.value })} />
-              </label>
-              <label className="md:col-span-2">
-                <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={adminForm.defaultPassword} onChange={(event) => setAdminForm({ ...adminForm, defaultPassword: event.target.value })} />
-              </label>
+              {adminAddMode === "existing" ? (
+                <label className="md:col-span-2">
+                  <span className="mb-1 block text-xs text-ink/60">Existing login <span className="text-clay">*</span></span>
+                  <select className={`focus-ring w-full rounded-md border bg-white px-3 py-2 ${submittedAdminAdd && !existingAdminProfileId ? "border-clay" : "border-ink/15"}`} value={existingAdminProfileId} onChange={(event) => setExistingAdminProfileId(event.target.value)}>
+                    <option value="">Select existing user</option>
+                    {existingLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
+                  </select>
+                </label>
+              ) : (
+                <>
+                  <label>
+                    <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
+                    <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && !adminForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Admin name" value={adminForm.name} onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })} />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                    <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && isSupabaseConfigured && !adminForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="admin@email.com" value={adminForm.email} onChange={(event) => setAdminForm({ ...adminForm, email: event.target.value })} />
+                  </label>
+                  <label className="md:col-span-2">
+                    <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                    <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={adminForm.defaultPassword} onChange={(event) => setAdminForm({ ...adminForm, defaultPassword: event.target.value })} />
+                  </label>
+                </>
+              )}
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={() => setIsAddAdminOpen(false)}>Cancel</button>
