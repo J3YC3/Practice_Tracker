@@ -92,10 +92,11 @@ export async function POST(request: Request) {
       user_id: createdUser.user.id,
       member_id: member.id,
       role: "member",
+      is_admin: false,
       display_name: username,
       email,
       require_password_reset: false
-    }, { onConflict: "user_id,role" });
+    }, { onConflict: "user_id" });
 
   if (profileError) return jsonError(profileError.message, 500);
 

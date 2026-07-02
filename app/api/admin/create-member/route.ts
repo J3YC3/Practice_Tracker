@@ -42,12 +42,11 @@ export async function POST(request: NextRequest) {
 
   const { data: requesterProfile, error: requesterError } = await adminClient
     .from("profiles")
-    .select("role")
+    .select("role,is_admin")
     .eq("user_id", authData.user.id)
-    .eq("role", "admin")
     .maybeSingle();
 
-  if (requesterError || requesterProfile?.role !== "admin") {
+  if (requesterError || !(requesterProfile?.is_admin || requesterProfile?.role === "admin")) {
     return jsonError("Only admin can create member login accounts.", 403);
   }
 
@@ -60,12 +59,12 @@ export async function POST(request: NextRequest) {
   const accountRole = body.accountRole ?? "member";
   const existingProfileId = body.existingProfileId;
 
-  let existingBaseProfile: { user_id: string; email?: string; display_name?: string; member_id?: string } | null = null;
+  let existingBaseProfile: { id: string; user_id: string; email?: string; display_name?: string; member_id?: string; is_admin?: boolean; role?: string } | null = null;
 
   if (existingProfileId) {
     const { data: foundProfile, error: foundProfileError } = await adminClient
       .from("profiles")
-      .select("user_id,email,display_name,member_id")
+      .select("id,user_id,email,display_name,member_id,is_admin,role")
       .eq("id", existingProfileId)
       .single();
 
@@ -81,16 +80,11 @@ export async function POST(request: NextRequest) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(effectiveEmail)) return jsonError("Email is invalid.");
   if (!existingProfileId && defaultPassword.length < 6) return jsonError("Default password must be at least 6 characters.");
 
-  const { data: existingRoleProfile, error: existingRoleError } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("user_id", existingBaseProfile?.user_id ?? "")
-    .eq("role", accountRole)
-    .maybeSingle();
-
-  if (existingProfileId && existingRoleError) return jsonError(existingRoleError.message, 500);
-  if (existingProfileId && existingRoleProfile) {
-    return jsonError(`This user already has a ${accountRole} account.`, 409);
+  if (existingProfileId && accountRole === "admin" && (existingBaseProfile?.is_admin || existingBaseProfile?.role === "admin")) {
+    return jsonError("This user already has an admin account.", 409);
+  }
+  if (existingProfileId && accountRole === "member" && existingBaseProfile?.member_id) {
+    return jsonError("This user already has a member account.", 409);
   }
 
   const [
@@ -146,14 +140,15 @@ export async function POST(request: NextRequest) {
   if (accountRole === "admin") {
     const { data: profile, error: profileError } = await adminClient
       .from("profiles")
-      .insert({
+      .upsert({
         user_id: userId,
-        member_id: null,
-        role: "admin",
+        member_id: existingBaseProfile?.member_id ?? null,
+        role: existingBaseProfile?.member_id ? "member" : "admin",
+        is_admin: true,
         display_name: effectiveName,
         email: effectiveEmail,
         require_password_reset: !existingProfileId
-      })
+      }, { onConflict: "user_id" })
       .select("*")
       .single();
 
@@ -184,14 +179,15 @@ export async function POST(request: NextRequest) {
 
   const { data: profile, error: profileError } = await adminClient
     .from("profiles")
-      .insert({
+    .upsert({
       user_id: userId,
       member_id: member.id,
-      role: accountRole,
+      role: "member",
+      is_admin: existingBaseProfile?.is_admin || existingBaseProfile?.role === "admin",
       display_name: effectiveName,
       email: effectiveEmail,
       require_password_reset: !existingProfileId
-    })
+    }, { onConflict: "user_id" })
     .select("*")
     .single();
 

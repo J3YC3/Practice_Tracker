@@ -19,9 +19,10 @@ end $$;
 
 create table if not exists profiles (
   id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade,
+  user_id uuid unique references auth.users(id) on delete cascade,
   member_id uuid references members(id) on delete set null,
   role user_role not null default 'member',
+  is_admin boolean not null default false,
   display_name text not null default '',
   email text,
   require_password_reset boolean not null default false,
@@ -29,9 +30,49 @@ create table if not exists profiles (
 );
 
 alter table profiles add column if not exists email text;
+alter table profiles add column if not exists is_admin boolean not null default false;
 alter table profiles add column if not exists require_password_reset boolean not null default false;
 alter table profiles drop constraint if exists profiles_user_id_key;
-create unique index if not exists profiles_user_role_unique on profiles(user_id, role);
+drop index if exists profiles_user_role_unique;
+
+update profiles
+set is_admin = true
+where role = 'admin';
+
+with merged as (
+  select
+    user_id,
+    (array_agg(id order by created_at asc))[1] as keep_id,
+    bool_or(role = 'admin' or is_admin) as next_is_admin,
+    (array_remove(array_agg(member_id order by (member_id is null), created_at asc), null))[1] as next_member_id,
+    (array_remove(array_agg(nullif(display_name, '') order by created_at asc), null))[1] as next_display_name,
+    (array_remove(array_agg(nullif(email, '') order by created_at asc), null))[1] as next_email,
+    bool_or(require_password_reset) as next_require_password_reset
+  from profiles
+  where user_id is not null
+  group by user_id
+)
+update profiles p
+set member_id = merged.next_member_id,
+    is_admin = merged.next_is_admin,
+    role = case when merged.next_is_admin and merged.next_member_id is null then 'admin'::user_role else 'member'::user_role end,
+    display_name = coalesce(merged.next_display_name, p.display_name),
+    email = coalesce(merged.next_email, p.email),
+    require_password_reset = merged.next_require_password_reset
+from merged
+where p.id = merged.keep_id;
+
+delete from profiles p
+using (
+  select user_id, (array_agg(id order by created_at asc))[1] as keep_id
+  from profiles
+  where user_id is not null
+  group by user_id
+) merged
+where p.user_id = merged.user_id
+  and p.id <> merged.keep_id;
+
+create unique index if not exists profiles_user_id_unique on profiles(user_id);
 
 create table if not exists training_sessions (
   id uuid primary key default uuid_generate_v4(),
@@ -106,7 +147,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from profiles
-    where user_id = auth.uid() and role = 'admin'
+    where user_id = auth.uid() and (is_admin = true or role = 'admin')
   );
 $$;
 
@@ -129,15 +170,16 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into profiles (user_id, role, display_name, email, require_password_reset)
+  insert into profiles (user_id, role, is_admin, display_name, email, require_password_reset)
   values (
     new.id,
     'member',
+    false,
     coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1), ''),
     new.email,
     false
   )
-  on conflict (user_id, role) do update
+  on conflict (user_id) do update
   set email = excluded.email,
       display_name = case
         when profiles.display_name = '' then excluded.display_name

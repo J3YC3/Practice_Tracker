@@ -25,12 +25,11 @@ export async function POST(request: NextRequest) {
 
   const { data: requesterProfile, error: requesterError } = await adminClient
     .from("profiles")
-    .select("role")
+    .select("role,is_admin")
     .eq("user_id", authData.user.id)
-    .eq("role", "admin")
     .maybeSingle();
 
-  if (requesterError || requesterProfile?.role !== "admin") {
+  if (requesterError || !(requesterProfile?.is_admin || requesterProfile?.role === "admin")) {
     return jsonError("Only admin can delete login accounts.", 403);
   }
 
@@ -39,12 +38,23 @@ export async function POST(request: NextRequest) {
 
   const { data: targetProfile, error: targetError } = await adminClient
     .from("profiles")
-    .select("id,user_id,role")
+    .select("id,user_id,role,is_admin,member_id")
     .eq("id", body.profileId)
     .single();
 
   if (targetError || !targetProfile) return jsonError("Profile not found.", 404);
   if (targetProfile.user_id === authData.user.id) return jsonError("You cannot delete your own admin account.", 400);
+  if (targetProfile.member_id) {
+    const { data: updatedProfile, error: updateError } = await adminClient
+      .from("profiles")
+      .update({ is_admin: false, role: "member" })
+      .eq("id", targetProfile.id)
+      .select("*")
+      .single();
+
+    if (updateError) return jsonError(updateError.message, 500);
+    return NextResponse.json({ ok: true, profile: updatedProfile });
+  }
 
   const { error: profileDeleteError } = await adminClient
     .from("profiles")

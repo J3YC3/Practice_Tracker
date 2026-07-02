@@ -6,6 +6,7 @@ export type UserProfile = {
   user_id?: string;
   member_id?: string;
   role: UserRole;
+  is_admin?: boolean;
   display_name: string;
   email?: string;
   require_password_reset?: boolean;
