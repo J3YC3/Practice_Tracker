@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (requesterError || !(requesterProfile?.is_admin || requesterProfile?.role === "admin")) {
-    return jsonError("Only admin can create member login accounts.", 403);
+    return jsonError("Only admin can manage login accounts.", 403);
   }
 
   const body = (await request.json()) as CreateMemberBody;
@@ -100,11 +100,11 @@ export async function POST(request: NextRequest) {
       .limit(1),
     adminClient
       .from("profiles")
-      .select("user_id,email,display_name,role")
+      .select("user_id,email,display_name,role,is_admin,member_id")
       .ilike("display_name", effectiveName),
     adminClient
       .from("profiles")
-      .select("user_id,email,display_name,role")
+      .select("user_id,email,display_name,role,is_admin,member_id")
       .ilike("email", effectiveEmail)
   ]);
 
@@ -119,6 +119,9 @@ export async function POST(request: NextRequest) {
     return jsonError("Username and email already exist. Please change both username and email.", 409);
   }
   if (!existingProfileId && sameEmailProfile) return jsonError("Email already exists. Please use another email.", 409);
+  if (!existingProfileId && accountRole === "admin" && sameNameProfile && (sameNameProfile.is_admin || sameNameProfile.role === "admin")) {
+    return jsonError("Admin username already exists. Please choose another username.", 409);
+  }
   if (!existingProfileId && accountRole === "member" && sameNameProfile) {
     return jsonError("Username already exists. Please choose another username.", 409);
   }

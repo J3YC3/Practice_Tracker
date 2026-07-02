@@ -734,6 +734,8 @@ function MembersPanel({
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "is_admin" | "member_id">>>({});
 
   const existingLoginProfiles = data.profiles.filter((item) => item.user_id);
+  const existingMemberLoginProfiles = existingLoginProfiles.filter((item) => !item.member_id);
+  const existingAdminLoginProfiles = existingLoginProfiles.filter((item) => !isAdminProfile(item));
 
   async function addAccount(accountRole: UserProfile["role"]) {
     if (!permission.isAdmin) return;
@@ -826,7 +828,9 @@ function MembersPanel({
         setMemberAddMode("new");
         setExistingMemberProfileId("");
       }
-      setNotice(`${accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
+      setNotice(addMode === "existing"
+        ? `${accountRole === "admin" ? "Admin" : "Member"} access added to existing login.`
+        : `${accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
       return;
     }
 
@@ -859,6 +863,10 @@ function MembersPanel({
   async function saveProfile(profile: UserProfile) {
     if (!permission.isAdmin) return;
     const draft = draftFor(profile);
+    if (profile.id === permission.profile.id && isAdminProfile(profile) && !draft.is_admin) {
+      setNotice("You cannot remove your own admin access.");
+      return;
+    }
     const row: UserProfile = {
       ...profile,
       display_name: draft.display_name,
@@ -871,6 +879,10 @@ function MembersPanel({
 
   async function deleteMember(member: Member) {
     if (!permission.isAdmin) return;
+    if (member.id === permission.memberId) {
+      setNotice("You cannot delete your own member account.");
+      return;
+    }
     const linkedProfiles = data.profiles.filter((profile) => profile.member_id === member.id);
     await Promise.all(linkedProfiles.map((profile) => persist("profiles", "profiles", { ...profile, member_id: undefined })));
     await remove("members", "members", member.id);
@@ -878,6 +890,10 @@ function MembersPanel({
 
   async function deleteProfile(profile: UserProfile) {
     if (!permission.isAdmin || !supabase) return;
+    if (profile.id === permission.profile.id || profile.user_id === permission.profile.user_id) {
+      setNotice("You cannot delete your own admin account.");
+      return;
+    }
     setNotice("");
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
@@ -924,7 +940,7 @@ function MembersPanel({
                   <div className="text-sm text-ink/60">{member.role} · {member.group_name}</div>
                 </div>
                 {permission.isAdmin && (
-                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white" onClick={() => deleteMember(member)} aria-label={`Delete ${member.name}`}>
+                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white disabled:cursor-not-allowed disabled:opacity-45" onClick={() => deleteMember(member)} disabled={member.id === permission.memberId} aria-label={`Delete ${member.name}`}>
                     <Trash2 size={16} />
                   </button>
                 )}
@@ -951,8 +967,9 @@ function MembersPanel({
                   <span className="mb-1 block text-xs text-ink/60">Existing login <span className="text-clay">*</span></span>
                   <select className={`focus-ring w-full rounded-md border bg-white px-3 py-2 ${submittedAdd && !existingMemberProfileId ? "border-clay" : "border-ink/15"}`} value={existingMemberProfileId} onChange={(event) => setExistingMemberProfileId(event.target.value)}>
                     <option value="">Select existing user</option>
-                    {existingLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
+                    {existingMemberLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
                   </select>
+                  {!existingMemberLoginProfiles.length && <span className="mt-1 block text-xs text-ink/50">No existing login without member access.</span>}
                 </label>
               ) : (
                 <>
@@ -1003,7 +1020,7 @@ function MembersPanel({
                     <div className="font-medium">{profileLabel(adminProfile)}</div>
                     <div className="text-sm text-ink/60">{adminProfile.email ?? "No email stored"}</div>
                   </div>
-                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white" onClick={() => deleteProfile(adminProfile)} aria-label={`Delete ${profileLabel(adminProfile)}`}>
+                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white disabled:cursor-not-allowed disabled:opacity-45" onClick={() => deleteProfile(adminProfile)} disabled={adminProfile.id === permission.profile.id || adminProfile.user_id === permission.profile.user_id} aria-label={`Delete ${profileLabel(adminProfile)}`}>
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -1030,8 +1047,9 @@ function MembersPanel({
                   <span className="mb-1 block text-xs text-ink/60">Existing login <span className="text-clay">*</span></span>
                   <select className={`focus-ring w-full rounded-md border bg-white px-3 py-2 ${submittedAdminAdd && !existingAdminProfileId ? "border-clay" : "border-ink/15"}`} value={existingAdminProfileId} onChange={(event) => setExistingAdminProfileId(event.target.value)}>
                     <option value="">Select existing user</option>
-                    {existingLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
+                    {existingAdminLoginProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profileLabel(profile)} · {profile.email ?? "no email"}</option>)}
                   </select>
+                  {!existingAdminLoginProfiles.length && <span className="mt-1 block text-xs text-ink/50">No existing login without admin access.</span>}
                 </label>
               ) : (
                 <>
