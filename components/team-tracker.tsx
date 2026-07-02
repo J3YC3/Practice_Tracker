@@ -536,7 +536,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
     setIsAddSessionOpen(false);
   }
 
-  async function setAttendance(memberId: string, status: AttendanceStatus) {
+  async function setAttendance(memberId: string, status: AttendanceStatus, reason?: string) {
     if (!sessionId || !canEditMember(permission, memberId)) return;
     const existing = data.attendance.find((record) => record.member_id === memberId && record.session_id === sessionId);
     const row: AttendanceRecord = {
@@ -544,11 +544,20 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
       member_id: memberId,
       session_id: sessionId,
       status,
-      reason: existing?.reason ?? "",
+      reason: reason ?? existing?.reason ?? "",
       created_at: existing?.created_at ?? new Date().toISOString()
     };
     await persist("attendance", "attendance_records", row);
   }
+
+  const currentAttendance = data.attendance.filter((record) => record.session_id === sessionId);
+  const attendanceSummary = {
+    present: currentAttendance.filter((record) => record.status === "present").length,
+    late: currentAttendance.filter((record) => record.status === "late").length,
+    absent: currentAttendance.filter((record) => record.status === "absent").length,
+    excused: currentAttendance.filter((record) => record.status === "excused").length,
+    notMarked: Math.max(data.members.length - currentAttendance.length, 0)
+  };
 
   return (
     <section className="rounded-lg border border-ink/10 bg-white p-4">
@@ -609,32 +618,76 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
 
       {currentSession && <p className="mb-3 text-sm text-ink/60">Late after {currentSession.late_after_minutes} minutes · {currentSession.start_time} to {currentSession.end_time}</p>}
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] border-separate border-spacing-y-2 text-sm">
-          <thead className="text-left text-ink/55"><tr><th className="px-3">Member</th><th>Group</th><th>Status</th><th>Action</th></tr></thead>
-          <tbody>
-            {data.members.map((member) => {
-              const record = data.attendance.find((item) => item.member_id === member.id && item.session_id === sessionId);
-              const editable = canEditMember(permission, member.id);
-              return (
-                <tr key={member.id} className={`${editable ? "bg-paper" : "bg-ink/5 text-ink/45"}`}>
-                  <td className="rounded-l-md px-3 py-3 font-medium">{member.name}</td>
-                  <td>{member.group_name}</td>
-                  <td className="capitalize">{record?.status ?? "not marked"}</td>
-                  <td className="rounded-r-md py-2">
-                    <div className="flex flex-wrap gap-2">
-                      {statusOptions.map((status) => (
-                        <button key={status} disabled={!editable} className={`focus-ring rounded-md px-2 py-1 capitalize disabled:cursor-not-allowed disabled:opacity-40 ${record?.status === status ? "bg-moss text-white" : "border border-ink/10 bg-white"}`} onClick={() => setAttendance(member.id, status)}>{status}</button>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+            <thead className="text-left text-ink/55"><tr><th className="px-3">Member</th><th>Group</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody>
+              {data.members.map((member) => {
+                const record = data.attendance.find((item) => item.member_id === member.id && item.session_id === sessionId);
+                const editable = canEditMember(permission, member.id);
+                const needsReason = record?.status === "late" || record?.status === "absent";
+                return (
+                  <tr key={member.id} className={`${editable ? "bg-paper" : "bg-ink/5 text-ink/45"}`}>
+                    <td className="rounded-l-md px-3 py-3 font-medium">{member.name}</td>
+                    <td>{member.group_name}</td>
+                    <td className="py-2">
+                      <select
+                        disabled={!editable}
+                        className="focus-ring w-36 rounded-md border border-ink/15 bg-white px-2 py-1 capitalize disabled:cursor-not-allowed disabled:bg-ink/5 disabled:text-ink/45"
+                        value={record?.status ?? ""}
+                        onChange={(event) => {
+                          if (event.target.value) void setAttendance(member.id, event.target.value as AttendanceStatus);
+                        }}
+                      >
+                        <option value="">Not marked</option>
+                        {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </td>
+                    <td className="rounded-r-md py-2 pr-3">
+                      {needsReason ? (
+                        <input
+                          disabled={!editable}
+                          className="focus-ring w-full rounded-md border border-ink/15 bg-white px-2 py-1 disabled:cursor-not-allowed disabled:bg-ink/5 disabled:text-ink/45"
+                          placeholder={`${record.status === "late" ? "Late" : "Absent"} reason`}
+                          defaultValue={record.reason ?? ""}
+                          onBlur={(event) => void setAttendance(member.id, record.status, event.target.value)}
+                        />
+                      ) : (
+                        <span className="text-ink/40">-</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <section className="rounded-lg border border-ink/10 bg-paper p-4">
+          <h3 className="mb-3 font-semibold">Session Summary</h3>
+          <div className="space-y-2 text-sm">
+            <SummaryRow label="Present" value={attendanceSummary.present} />
+            <SummaryRow label="Late" value={attendanceSummary.late} />
+            <SummaryRow label="Absent" value={attendanceSummary.absent} />
+            <SummaryRow label="Excused" value={attendanceSummary.excused} />
+            <SummaryRow label="Not marked" value={attendanceSummary.notMarked} />
+            <div className="border-t border-ink/10 pt-2">
+              <SummaryRow label="Total members" value={data.members.length} />
+            </div>
+          </div>
+        </section>
       </div>
     </section>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-ink/65">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
   );
 }
 
