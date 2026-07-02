@@ -80,8 +80,10 @@ export default function TeamTracker() {
   const [notice, setNotice] = useState("");
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [signupUsername, setSignupUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
   const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -153,7 +155,7 @@ export default function TeamTracker() {
   async function signIn() {
     if (!supabase) return;
     setNotice("");
-    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
     if (error) {
       setNotice(error.message);
       return;
@@ -168,15 +170,15 @@ export default function TeamTracker() {
       setNotice("Username is required.");
       return;
     }
-    if (!email.trim()) {
+    if (!signupEmail.trim()) {
       setNotice("Email is required.");
       return;
     }
-    if (password.length < 6) {
+    if (signupPassword.length < 6) {
       setNotice("Password must be at least 6 characters.");
       return;
     }
-    if (password !== signupConfirmPassword) {
+    if (signupPassword !== signupConfirmPassword) {
       setNotice("Passwords do not match.");
       return;
     }
@@ -186,8 +188,8 @@ export default function TeamTracker() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username: signupUsername,
-        email,
-        password,
+        email: signupEmail,
+        password: signupPassword,
         confirmPassword: signupConfirmPassword
       })
     });
@@ -198,7 +200,7 @@ export default function TeamTracker() {
     }
 
     if (!supabase) return;
-    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email: signupEmail, password: signupPassword });
     if (error) {
       setAuthMode("login");
       setNotice("Account created. Please login.");
@@ -214,12 +216,30 @@ export default function TeamTracker() {
     }
     setIsAuthed(false);
     setProfile(unlinkedProfile);
-    setEmail("");
-    setPassword("");
+    setLoginEmail("");
+    setLoginPassword("");
+    setSignupEmail("");
+    setSignupPassword("");
     setSignupUsername("");
     setSignupConfirmPassword("");
     setNewPassword("");
     setConfirmPassword("");
+  }
+
+  function showSignup() {
+    setNotice("");
+    setSignupUsername("");
+    setSignupEmail("");
+    setSignupPassword("");
+    setSignupConfirmPassword("");
+    setAuthMode("signup");
+  }
+
+  function showLogin() {
+    setNotice("");
+    setLoginEmail("");
+    setLoginPassword("");
+    setAuthMode("login");
   }
 
   async function resetOwnPassword() {
@@ -364,20 +384,20 @@ export default function TeamTracker() {
                 <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Your username" value={signupUsername} onChange={(event) => setSignupUsername(event.target.value)} />
               </label>
             )}
-            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Email" value={authMode === "login" ? loginEmail : signupEmail} onChange={(event) => authMode === "login" ? setLoginEmail(event.target.value) : setSignupEmail(event.target.value)} />
+            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Password" type="password" value={authMode === "login" ? loginPassword : signupPassword} onChange={(event) => authMode === "login" ? setLoginPassword(event.target.value) : setSignupPassword(event.target.value)} />
             {authMode === "signup" && (
               <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Confirm password" type="password" value={signupConfirmPassword} onChange={(event) => setSignupConfirmPassword(event.target.value)} />
             )}
             {authMode === "login" ? (
               <>
                 <button className="focus-ring w-full rounded-md bg-moss px-3 py-2 text-white" onClick={signIn}>Login</button>
-                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={() => { setNotice(""); setAuthMode("signup"); }}>Create member account</button>
+                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={showSignup}>Create member account</button>
               </>
             ) : (
               <>
                 <button className="focus-ring w-full rounded-md bg-moss px-3 py-2 text-white" onClick={signUp}>Sign up as member</button>
-                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={() => { setNotice(""); setAuthMode("login"); }}>Back to login</button>
+                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={showLogin}>Back to login</button>
               </>
             )}
             {notice && <p className="text-sm text-clay">{notice}</p>}
