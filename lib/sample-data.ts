@@ -4,9 +4,9 @@ const now = new Date().toISOString();
 
 export const sampleData: TeamData = {
   profiles: [
-    { id: "p-admin", role: "admin", display_name: "Admin", created_at: now },
-    { id: "p-junwei", member_id: "m1", role: "member", display_name: "Jun Wei", created_at: now },
-    { id: "p-kaixin", member_id: "m2", role: "member", display_name: "Kai Xin", created_at: now }
+    { id: "p-admin", role: "admin", display_name: "Admin", email: "admin@example.com", created_at: now },
+    { id: "p-junwei", member_id: "m1", role: "member", display_name: "Jun Wei", email: "junwei@example.com", created_at: now },
+    { id: "p-kaixin", member_id: "m2", role: "member", display_name: "Kai Xin", email: "kaixin@example.com", created_at: now }
   ],
   members: [
     { id: "m1", name: "Jun Wei", role: "Section Leader", group_name: "Snare", phone: "", active: true, created_at: now },

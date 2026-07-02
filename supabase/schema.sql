@@ -23,8 +23,11 @@ create table if not exists profiles (
   member_id uuid references members(id) on delete set null,
   role user_role not null default 'member',
   display_name text not null default '',
+  email text,
   created_at timestamptz not null default now()
 );
+
+alter table profiles add column if not exists email text;
 
 create table if not exists training_sessions (
   id uuid primary key default uuid_generate_v4(),
@@ -112,10 +115,45 @@ as $$
   select member_id from profiles where user_id = auth.uid();
 $$;
 
+create or replace function handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into profiles (user_id, role, display_name, email)
+  values (
+    new.id,
+    'member',
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1), ''),
+    new.email
+  )
+  on conflict (user_id) do update
+  set email = excluded.email,
+      display_name = case
+        when profiles.display_name = '' then excluded.display_name
+        else profiles.display_name
+      end;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function handle_new_user();
+
 drop policy if exists "Users can read own profile and admins read all" on profiles;
 create policy "Users can read own profile and admins read all" on profiles
 for select to authenticated
 using (user_id = auth.uid() or is_admin());
+
+drop policy if exists "Users can update own basic profile" on profiles;
+create policy "Users can update own basic profile" on profiles
+for update to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid() and role = 'member');
 
 drop policy if exists "Admins can manage profiles" on profiles;
 create policy "Admins can manage profiles" on profiles

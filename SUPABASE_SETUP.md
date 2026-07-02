@@ -12,6 +12,8 @@
 
 When Supabase env vars are present, the app uses real login/logout. The demo role selector only appears when Supabase is not configured.
 
+New signups automatically get a `profiles` row as a `member`. Admin can link that login profile to a member record inside `Members > Login Access Linking`.
+
 Roles:
 
 - `admin`: can manage all members, sessions, attendance, workout items, workout records, and reviews.

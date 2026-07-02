@@ -7,6 +7,7 @@ export type UserProfile = {
   member_id?: string;
   role: UserRole;
   display_name: string;
+  email?: string;
   created_at: string;
 };
 

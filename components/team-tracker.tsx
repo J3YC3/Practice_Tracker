@@ -446,6 +446,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
 
 function MembersPanel({ data, permission, persist, setSelectedMemberId }: { data: TeamData; permission: Permission; persist: Persist; setSelectedMemberId: (value: string) => void }) {
   const [form, setForm] = useState({ name: "", role: "Member", group_name: "General", phone: "" });
+  const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
   async function addMember() {
     if (!permission.isAdmin || !form.name.trim()) return;
@@ -455,26 +456,102 @@ function MembersPanel({ data, permission, persist, setSelectedMemberId }: { data
     setForm({ name: "", role: "Member", group_name: "General", phone: "" });
   }
 
+  function draftFor(profile: UserProfile) {
+    return profileDrafts[profile.id] ?? {
+      display_name: profile.display_name,
+      role: profile.role,
+      member_id: profile.member_id ?? ""
+    };
+  }
+
+  function updateDraft(profile: UserProfile, patch: Partial<Pick<UserProfile, "display_name" | "role" | "member_id">>) {
+    setProfileDrafts((current) => ({
+      ...current,
+      [profile.id]: {
+        ...draftFor(profile),
+        ...patch
+      }
+    }));
+  }
+
+  async function saveProfile(profile: UserProfile) {
+    if (!permission.isAdmin) return;
+    const draft = draftFor(profile);
+    const row: UserProfile = {
+      ...profile,
+      display_name: draft.display_name,
+      role: draft.role,
+      member_id: draft.member_id || undefined
+    };
+    await persist("profiles", "profiles", row);
+  }
+
   return (
-    <section className="rounded-lg border border-ink/10 bg-white p-4">
-      <div className="mb-4 flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Member Management</h2></div>
-      {permission.isAdmin && (
-        <div className="mb-4 grid gap-2 md:grid-cols-5">
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2 md:col-span-2" placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Group" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
-          <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addMember}><Plus size={16} /> Member</button>
-        </div>
-      )}
-      <div className="grid gap-2 md:grid-cols-2">
-        {data.members.map((member) => (
-          <div key={member.id} className={`rounded-md border border-ink/10 p-3 ${canEditMember(permission, member.id) ? "bg-paper" : "bg-ink/5"}`}>
-            <div className="font-medium">{member.name}</div>
-            <div className="text-sm text-ink/60">{member.role} · {member.group_name}</div>
+    <div className="space-y-4">
+      <section className="rounded-lg border border-ink/10 bg-white p-4">
+        <div className="mb-4 flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Member Management</h2></div>
+        {permission.isAdmin && (
+          <div className="mb-4 grid gap-2 md:grid-cols-5">
+            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2 md:col-span-2" placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Group" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
+            <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addMember}><Plus size={16} /> Member</button>
           </div>
-        ))}
-      </div>
-    </section>
+        )}
+        <div className="grid gap-2 md:grid-cols-2">
+          {data.members.map((member) => (
+            <div key={member.id} className={`rounded-md border border-ink/10 p-3 ${canEditMember(permission, member.id) ? "bg-paper" : "bg-ink/5"}`}>
+              <div className="font-medium">{member.name}</div>
+              <div className="text-sm text-ink/60">{member.role} · {member.group_name}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {permission.isAdmin && (
+        <section className="rounded-lg border border-ink/10 bg-white p-4">
+          <div className="mb-4 flex items-center gap-2"><Shield size={18} className="text-moss" /><h2 className="font-semibold">Login Access Linking</h2></div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
+              <thead className="text-left text-ink/55">
+                <tr><th className="px-3">Login</th><th>Display name</th><th>Role</th><th>Linked member</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {data.profiles.map((profile) => {
+                  const draft = draftFor(profile);
+                  return (
+                    <tr key={profile.id} className="bg-paper">
+                      <td className="rounded-l-md px-3 py-3">
+                        <div className="font-medium">{profile.email ?? "No email stored"}</div>
+                        <div className="text-xs text-ink/50">{profile.user_id ? "Supabase Auth user" : "Demo profile"}</div>
+                      </td>
+                      <td>
+                        <input className="focus-ring w-40 rounded-md border border-ink/15 bg-white px-2 py-1" value={draft.display_name} onChange={(event) => updateDraft(profile, { display_name: event.target.value })} />
+                      </td>
+                      <td>
+                        <select className="focus-ring rounded-md border border-ink/15 bg-white px-2 py-1" value={draft.role} onChange={(event) => updateDraft(profile, { role: event.target.value as UserProfile["role"] })}>
+                          <option value="member">member</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </td>
+                      <td>
+                        <select className="focus-ring w-44 rounded-md border border-ink/15 bg-white px-2 py-1" value={draft.member_id ?? ""} onChange={(event) => updateDraft(profile, { member_id: event.target.value })}>
+                          <option value="">No member link</option>
+                          {data.members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
+                        </select>
+                      </td>
+                      <td className="rounded-r-md">
+                        <button className="focus-ring flex items-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={() => saveProfile(profile)}><Save size={16} /> Save</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
   );
 }
 
