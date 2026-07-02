@@ -653,24 +653,29 @@ function MembersPanel({
   setNotice: (message: string) => void;
   setSelectedMemberId: (value: string) => void;
 }) {
-  const [form, setForm] = useState({
+  const defaultAccountForm = {
     name: "",
     email: "",
     defaultPassword: "ChangeMe123",
     role: "Drummer",
-    group_name: "General",
-    accountRole: "member" as UserProfile["role"]
-  });
+    group_name: "General"
+  };
+  const [memberForm, setMemberForm] = useState(defaultAccountForm);
+  const [adminForm, setAdminForm] = useState(defaultAccountForm);
   const [submittedAdd, setSubmittedAdd] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [submittedAdminAdd, setSubmittedAdminAdd] = useState(false);
+  const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
-  async function addMember() {
+  async function addAccount(accountRole: UserProfile["role"]) {
     if (!permission.isAdmin) return;
-    setSubmittedAdd(true);
+    const form = accountRole === "admin" ? adminForm : memberForm;
+    if (accountRole === "admin") setSubmittedAdminAdd(true);
+    else setSubmittedAdd(true);
     setNotice("");
     if (!form.name.trim()) {
-      setNotice("Member name is required.");
+      setNotice(`${accountRole === "admin" ? "Admin" : "Member"} name is required.`);
       return;
     }
     if (isSupabaseConfigured && !form.email.trim()) {
@@ -684,7 +689,7 @@ function MembersPanel({
 
     const normalizedName = form.name.trim().toLowerCase();
     const normalizedGroup = form.group_name.trim().toLowerCase();
-    const localExisting = form.accountRole === "member"
+    const localExisting = accountRole === "member"
       ? data.members.find((member) => (
         member.name.trim().toLowerCase() === normalizedName &&
         member.group_name.trim().toLowerCase() === normalizedGroup
@@ -717,7 +722,7 @@ function MembersPanel({
           defaultPassword: form.defaultPassword,
           memberRole: form.role,
           groupName: form.group_name,
-          accountRole: form.accountRole
+          accountRole
         })
       });
       const result = await response.json() as { error?: string; member?: Member; profile?: UserProfile };
@@ -734,17 +739,23 @@ function MembersPanel({
       if (result.member) await persist("members", "members", result.member);
       if (result.profile) await persist("profiles", "profiles", result.profile);
       if (result.member) setSelectedMemberId(result.member.id);
-      setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
-      setSubmittedAdd(false);
-      setIsAddOpen(false);
-      setNotice(`${form.accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
+      if (accountRole === "admin") {
+        setAdminForm(defaultAccountForm);
+        setSubmittedAdminAdd(false);
+        setIsAddAdminOpen(false);
+      } else {
+        setMemberForm(defaultAccountForm);
+        setSubmittedAdd(false);
+        setIsAddOpen(false);
+      }
+      setNotice(`${accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
       return;
     }
 
     const row: Member = { id: id("member"), name: form.name, role: form.role, group_name: form.group_name, active: true, created_at: new Date().toISOString() };
     await persist("members", "members", row);
     setSelectedMemberId(row.id);
-    setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
+    setMemberForm(defaultAccountForm);
     setSubmittedAdd(false);
     setIsAddOpen(false);
   }
@@ -826,35 +837,76 @@ function MembersPanel({
             <div className="grid gap-3 md:grid-cols-2">
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !form.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !memberForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={memberForm.name} onChange={(event) => setMemberForm({ ...memberForm, name: event.target.value })} />
               </label>
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !form.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !memberForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={memberForm.email} onChange={(event) => setMemberForm({ ...memberForm, email: event.target.value })} />
               </label>
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={form.defaultPassword} onChange={(event) => setForm({ ...form, defaultPassword: event.target.value })} />
-              </label>
-              <label>
-                <span className="mb-1 block text-xs text-ink/60">Account</span>
-                <select className="focus-ring w-full rounded-md border border-ink/15 bg-white px-3 py-2" value={form.accountRole} onChange={(event) => setForm({ ...form, accountRole: event.target.value as UserProfile["role"] })}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={memberForm.defaultPassword} onChange={(event) => setMemberForm({ ...memberForm, defaultPassword: event.target.value })} />
               </label>
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Member role</span>
-                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={memberForm.role} onChange={(event) => setMemberForm({ ...memberForm, role: event.target.value })} />
               </label>
               <label>
                 <span className="mb-1 block text-xs text-ink/60">Group</span>
-                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="General" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="General" value={memberForm.group_name} onChange={(event) => setMemberForm({ ...memberForm, group_name: event.target.value })} />
               </label>
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={() => setIsAddOpen(false)}>Cancel</button>
-              <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addMember}><Plus size={16} /> Add Member</button>
+              <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={() => addAccount("member")}><Plus size={16} /> Add Member</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {permission.isAdmin && (
+        <section className="rounded-lg border border-ink/10 bg-white p-4">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2"><Shield size={18} className="text-moss" /><h2 className="font-semibold">Admin Management</h2></div>
+            <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-sm text-white" onClick={() => { setSubmittedAdminAdd(false); setIsAddAdminOpen(true); }}>
+              <Plus size={16} /> Add Admin
+            </button>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {data.profiles.filter((profile) => profile.role === "admin").map((adminProfile) => (
+              <div key={adminProfile.id} className="rounded-md border border-ink/10 bg-paper p-3">
+                <div className="font-medium">{adminProfile.display_name}</div>
+                <div className="text-sm text-ink/60">{adminProfile.email ?? "No email stored"}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {permission.isAdmin && isAddAdminOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6">
+          <section className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><Shield size={18} className="text-moss" /><h2 className="font-semibold">Add Admin</h2></div>
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2 text-sm" onClick={() => setIsAddAdminOpen(false)}>Close</button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && !adminForm.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Admin name" value={adminForm.name} onChange={(event) => setAdminForm({ ...adminForm, name: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdminAdd && isSupabaseConfigured && !adminForm.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="admin@email.com" value={adminForm.email} onChange={(event) => setAdminForm({ ...adminForm, email: event.target.value })} />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={adminForm.defaultPassword} onChange={(event) => setAdminForm({ ...adminForm, defaultPassword: event.target.value })} />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={() => setIsAddAdminOpen(false)}>Cancel</button>
+              <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={() => addAccount("admin")}><Plus size={16} /> Add Admin</button>
             </div>
           </section>
         </div>
