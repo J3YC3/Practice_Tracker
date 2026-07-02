@@ -637,7 +637,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
     : data.members.filter((member) => member.id === permission.memberId);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <section className="rounded-lg border border-ink/10 bg-white p-4">
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-2"><CalendarClock size={18} className="text-moss" /><h2 className="font-semibold">Attendance</h2></div>
@@ -747,7 +747,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
         </div>
       </section>
 
-      <section className="rounded-lg border border-ink/10 bg-white p-4">
+      <section className="rounded-lg border border-ink/10 bg-paper p-4">
         <h3 className="mb-3 font-semibold">Session Summary</h3>
         <div className="space-y-2 text-sm">
           <SummaryRow label="Present" value={attendanceSummary.present} />
