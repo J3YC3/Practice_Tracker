@@ -42,18 +42,36 @@ export async function POST(request: NextRequest) {
     .eq("user_id", authData.user.id)
     .maybeSingle();
 
-  if (profileError || !profile) return jsonError("Login profile not found.", 404);
+  if (profileError) return jsonError(profileError.message, 500);
 
-  const isAdmin = Boolean(profile.is_admin || profile.role === "admin");
-  let allowedMemberId = profile.member_id as string | undefined;
+  const fallbackDisplayName = String(
+    authData.user.user_metadata?.display_name ??
+    authData.user.email?.split("@")[0] ??
+    ""
+  ).trim();
+  const displayName = profile?.display_name?.trim() || fallbackDisplayName;
+  const isAdmin = Boolean(profile?.is_admin || profile?.role === "admin");
+  let allowedMemberId = profile?.member_id as string | undefined;
 
-  if (!allowedMemberId && profile.display_name) {
-    const { data: matchedMember } = await adminClient
+  if (!allowedMemberId && displayName) {
+    const { data: matchedMembers } = await adminClient
       .from("members")
       .select("id")
-      .ilike("name", profile.display_name)
-      .maybeSingle();
-    allowedMemberId = matchedMember?.id;
+      .ilike("name", displayName)
+      .limit(1);
+    allowedMemberId = matchedMembers?.[0]?.id;
+  }
+
+  if (!profile && allowedMemberId) {
+    await adminClient.from("profiles").upsert({
+      user_id: authData.user.id,
+      member_id: allowedMemberId,
+      role: "member",
+      is_admin: false,
+      display_name: displayName,
+      email: authData.user.email ?? "",
+      require_password_reset: false
+    }, { onConflict: "user_id" });
   }
 
   if (!isAdmin && allowedMemberId !== body.memberId) {
