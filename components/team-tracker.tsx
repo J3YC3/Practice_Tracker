@@ -622,6 +622,7 @@ function MembersPanel({
     accountRole: "member" as UserProfile["role"]
   });
   const [submittedAdd, setSubmittedAdd] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
   async function addMember() {
@@ -695,6 +696,7 @@ function MembersPanel({
       if (result.member) setSelectedMemberId(result.member.id);
       setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
       setSubmittedAdd(false);
+      setIsAddOpen(false);
       setNotice(`${form.accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
       return;
     }
@@ -704,6 +706,7 @@ function MembersPanel({
     setSelectedMemberId(row.id);
     setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
     setSubmittedAdd(false);
+    setIsAddOpen(false);
   }
 
   function draftFor(profile: UserProfile) {
@@ -746,39 +749,14 @@ function MembersPanel({
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-ink/10 bg-white p-4">
-        <div className="mb-4 flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Member Management</h2></div>
-        {permission.isAdmin && (
-          <div className="mb-4 grid gap-2 md:grid-cols-6">
-            <label className="md:col-span-2">
-              <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
-              <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !form.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            </label>
-            <label className="md:col-span-2">
-              <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-              <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !form.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            </label>
-            <label>
-              <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
-              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={form.defaultPassword} onChange={(event) => setForm({ ...form, defaultPassword: event.target.value })} />
-            </label>
-            <label>
-              <span className="mb-1 block text-xs text-ink/60">Account</span>
-              <select className="focus-ring w-full rounded-md border border-ink/15 bg-white px-3 py-2" value={form.accountRole} onChange={(event) => setForm({ ...form, accountRole: event.target.value as UserProfile["role"] })}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            </label>
-            <label>
-              <span className="mb-1 block text-xs text-ink/60">Member role</span>
-              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
-            </label>
-            <label>
-              <span className="mb-1 block text-xs text-ink/60">Group</span>
-              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="General" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
-            </label>
-            <button className="focus-ring flex items-center justify-center gap-2 self-end rounded-md bg-moss px-3 py-2 text-white md:col-span-2" onClick={addMember}><Plus size={16} /> Add Member</button>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Member Management</h2></div>
+          {permission.isAdmin && (
+            <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-sm text-white" onClick={() => { setSubmittedAdd(false); setIsAddOpen(true); }}>
+              <Plus size={16} /> Add Member
+            </button>
+          )}
           </div>
-        )}
         <div className="grid gap-2 md:grid-cols-2">
           {data.members.map((member) => (
             <div key={member.id} className={`rounded-md border border-ink/10 p-3 ${canEditMember(permission, member.id) ? "bg-paper" : "bg-ink/5"}`}>
@@ -797,6 +775,50 @@ function MembersPanel({
           ))}
         </div>
       </section>
+
+      {permission.isAdmin && isAddOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6">
+          <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Add Member</h2></div>
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2 text-sm" onClick={() => setIsAddOpen(false)}>Close</button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !form.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !form.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={form.defaultPassword} onChange={(event) => setForm({ ...form, defaultPassword: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Account</span>
+                <select className="focus-ring w-full rounded-md border border-ink/15 bg-white px-3 py-2" value={form.accountRole} onChange={(event) => setForm({ ...form, accountRole: event.target.value as UserProfile["role"] })}>
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Member role</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Group</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="General" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={() => setIsAddOpen(false)}>Cancel</button>
+              <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addMember}><Plus size={16} /> Add Member</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {permission.isAdmin && (
         <section className="rounded-lg border border-ink/10 bg-white p-4">
