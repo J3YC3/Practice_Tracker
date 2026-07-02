@@ -489,7 +489,7 @@ export default function TeamTracker() {
 
           {activeTab === "attendance" && <AttendancePanel data={data} currentSession={currentSession} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} setNotice={setNotice} />}
           {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} remove={remove} setNotice={setNotice} setSelectedMemberId={setSelectedMemberId} />}
-          {activeTab === "workout" && <WorkoutPanel data={data} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
+          {activeTab === "workout" && <WorkoutPanel data={data} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} setNotice={setNotice} />}
           {activeTab === "reviews" && <ReviewsPanel data={data} selectedMemberId={selectedMemberId} setSelectedMemberId={setSelectedMemberId} permission={permission} persist={persist} />}
         </section>
 
@@ -1198,9 +1198,19 @@ function MembersPanel({
   );
 }
 
-function WorkoutPanel({ data, sessionId, setSessionId, permission, persist }: { data: TeamData; sessionId: string; setSessionId: (value: string) => void; permission: Permission; persist: Persist }) {
+function WorkoutPanel({ data, sessionId, setSessionId, permission, persist, setNotice }: {
+  data: TeamData;
+  sessionId: string;
+  setSessionId: (value: string) => void;
+  permission: Permission;
+  persist: Persist;
+  setNotice: (message: string) => void;
+}) {
   const [metric, setMetric] = useState({ name: "", unit: "reps", target: 0 });
   const metrics = data.metrics.filter((item) => item.session_id === sessionId || !item.session_id);
+  const visibleMembers = permission.isAdmin
+    ? data.members
+    : data.members.filter((member) => member.id === permission.memberId);
 
   async function addMetric() {
     if (!permission.isAdmin || !metric.name.trim()) return;
@@ -1221,6 +1231,37 @@ function WorkoutPanel({ data, sessionId, setSessionId, permission, persist }: { 
       remark: existing?.remark ?? "",
       recorded_at: existing?.recorded_at ?? new Date().toISOString()
     };
+    if (supabase && isSupabaseConfigured) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setNotice("Missing login session.");
+        return;
+      }
+
+      const response = await fetch("/api/workout/set", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          memberId,
+          sessionId,
+          metricId,
+          value,
+          remark: row.remark
+        })
+      });
+      const result = await response.json() as { error?: string; record?: WorkoutRecord };
+      if (!response.ok || !result.record) {
+        setNotice(result.error ?? "Unable to update workout.");
+        return;
+      }
+      setNotice("");
+      await persist("workouts", "workout_records", result.record, { skipRemote: true });
+      return;
+    }
     await persist("workouts", "workout_records", row);
   }
 
@@ -1256,7 +1297,7 @@ function WorkoutPanel({ data, sessionId, setSessionId, permission, persist }: { 
             </tr>
           </thead>
           <tbody>
-            {data.members.map((member) => {
+            {visibleMembers.map((member) => {
               const editable = canEditMember(permission, member.id);
               return (
                 <tr key={member.id} className={editable ? "bg-paper" : "bg-ink/5"}>
@@ -1281,6 +1322,11 @@ function WorkoutPanel({ data, sessionId, setSessionId, permission, persist }: { 
                 </tr>
               );
             })}
+            {!visibleMembers.length && (
+              <tr className="bg-paper">
+                <td className="px-3 py-3 text-ink/60" colSpan={Math.max(metrics.length + 1, 1)}>Your login is not linked to a member profile yet. Ask an admin to link your account in Login Access Linking.</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
