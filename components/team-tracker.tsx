@@ -525,6 +525,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
   persist: Persist;
 }) {
   const [newSession, setNewSession] = useState({ title: "", session_date: today(), start_time: "20:00", end_time: "22:00", late_after_minutes: 10, notes: "" });
+  const [isAddSessionOpen, setIsAddSessionOpen] = useState(false);
 
   async function addSession() {
     if (!permission.isAdmin || !newSession.title.trim()) return;
@@ -532,6 +533,7 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
     await persist("sessions", "training_sessions", row);
     setSessionId(row.id);
     setNewSession({ title: "", session_date: today(), start_time: "20:00", end_time: "22:00", late_after_minutes: 10, notes: "" });
+    setIsAddSessionOpen(false);
   }
 
   async function setAttendance(memberId: string, status: AttendanceStatus) {
@@ -552,18 +554,56 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
     <section className="rounded-lg border border-ink/10 bg-white p-4">
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-2"><CalendarClock size={18} className="text-moss" /><h2 className="font-semibold">Attendance</h2></div>
-        <select className="focus-ring rounded-md border border-ink/15 px-3 py-2" value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
-          {data.sessions.map((session) => <option key={session.id} value={session.id}>{session.session_date} · {session.title}</option>)}
-        </select>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select className="focus-ring rounded-md border border-ink/15 px-3 py-2" value={sessionId} onChange={(event) => setSessionId(event.target.value)}>
+            {data.sessions.map((session) => <option key={session.id} value={session.id}>{session.session_date} · {session.title}</option>)}
+          </select>
+          {permission.isAdmin && (
+            <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-sm text-white" onClick={() => setIsAddSessionOpen(true)}>
+              <Plus size={16} /> Add Session
+            </button>
+          )}
+        </div>
       </div>
 
-      {permission.isAdmin && (
-        <div className="mb-4 grid gap-2 md:grid-cols-6">
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2 md:col-span-2" placeholder="Practice title" value={newSession.title} onChange={(event) => setNewSession({ ...newSession, title: event.target.value })} />
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" type="date" value={newSession.session_date} onChange={(event) => setNewSession({ ...newSession, session_date: event.target.value })} />
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" type="time" value={newSession.start_time} onChange={(event) => setNewSession({ ...newSession, start_time: event.target.value })} />
-          <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" type="time" value={newSession.end_time} onChange={(event) => setNewSession({ ...newSession, end_time: event.target.value })} />
-          <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addSession}><Plus size={16} /> Session</button>
+      {permission.isAdmin && isAddSessionOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6">
+          <section className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2"><CalendarClock size={18} className="text-moss" /><h2 className="font-semibold">Add Session</h2></div>
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2 text-sm" onClick={() => setIsAddSessionOpen(false)}>Close</button>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs text-ink/60">Practice title <span className="text-clay">*</span></span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Practice title" value={newSession.title} onChange={(event) => setNewSession({ ...newSession, title: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Date</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" type="date" value={newSession.session_date} onChange={(event) => setNewSession({ ...newSession, session_date: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Late after minutes</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" type="number" min={0} value={newSession.late_after_minutes} onChange={(event) => setNewSession({ ...newSession, late_after_minutes: Number(event.target.value) })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Start time</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" type="time" value={newSession.start_time} onChange={(event) => setNewSession({ ...newSession, start_time: event.target.value })} />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">End time</span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" type="time" value={newSession.end_time} onChange={(event) => setNewSession({ ...newSession, end_time: event.target.value })} />
+              </label>
+              <label className="md:col-span-2">
+                <span className="mb-1 block text-xs text-ink/60">Notes</span>
+                <textarea className="focus-ring min-h-20 w-full rounded-md border border-ink/15 px-3 py-2" value={newSession.notes} onChange={(event) => setNewSession({ ...newSession, notes: event.target.value })} />
+              </label>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={() => setIsAddSessionOpen(false)}>Cancel</button>
+              <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addSession}><Plus size={16} /> Add Session</button>
+            </div>
+          </section>
         </div>
       )}
 
