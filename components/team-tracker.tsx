@@ -78,6 +78,7 @@ export default function TeamTracker() {
   const [activeTab, setActiveTab] = useState("attendance");
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [signupSuccessOpen, setSignupSuccessOpen] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [signupUsername, setSignupUsername] = useState("");
   const [loginEmail, setLoginEmail] = useState("");
@@ -199,15 +200,15 @@ export default function TeamTracker() {
       return;
     }
 
-    if (!supabase) return;
-    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email: signupEmail, password: signupPassword });
-    if (error) {
-      setAuthMode("login");
-      setNotice("Account created. Please login.");
-      return;
-    }
-    setIsAuthed(true);
-    await loadSupabaseData(loginData.user.id);
+    setSignupUsername("");
+    setSignupEmail("");
+    setSignupPassword("");
+    setSignupConfirmPassword("");
+    setLoginEmail("");
+    setLoginPassword("");
+    setNotice("");
+    setAuthMode("login");
+    setSignupSuccessOpen(true);
   }
 
   async function signOut() {
@@ -370,6 +371,15 @@ export default function TeamTracker() {
   if (isSupabaseConfigured && !isAuthed) {
     return (
       <main className="flex min-h-screen items-center justify-center px-4">
+        {signupSuccessOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4">
+            <section className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl">
+              <h2 className="text-lg font-semibold">Sign up successful</h2>
+              <p className="mt-2 text-sm text-ink/65">Your member account has been created. Please login to continue.</p>
+              <button className="focus-ring mt-5 w-full rounded-md bg-moss px-3 py-2 text-white" onClick={() => setSignupSuccessOpen(false)}>Go to login</button>
+            </section>
+          </div>
+        )}
         <section className="w-full max-w-sm rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
           <div className="mb-5 flex items-center gap-3">
             <div>
