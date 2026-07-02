@@ -14,6 +14,13 @@ function jsonError(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function schemaError(message: string) {
+  if (message.includes("profiles.email") || message.includes("email does not exist")) {
+    return "Database is missing profiles.email. Run the latest supabase/schema.sql in Supabase SQL Editor.";
+  }
+  return message;
+}
+
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -76,9 +83,9 @@ export async function POST(request: NextRequest) {
       .ilike("email", email)
   ]);
 
-  if (existingMemberError) return jsonError(existingMemberError.message, 500);
-  if (sameNameError) return jsonError(sameNameError.message, 500);
-  if (sameEmailError) return jsonError(sameEmailError.message, 500);
+  if (existingMemberError) return jsonError(schemaError(existingMemberError.message), 500);
+  if (sameNameError) return jsonError(schemaError(sameNameError.message), 500);
+  if (sameEmailError) return jsonError(schemaError(sameEmailError.message), 500);
 
   const sameNameProfile = sameNameProfiles?.find((profile) => profile.display_name?.toLowerCase() === name.toLowerCase());
   const sameEmailProfile = sameEmailProfiles?.find((profile) => profile.email?.toLowerCase() === email);
@@ -117,7 +124,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .single();
 
-    if (profileError) return jsonError(profileError.message, 500);
+    if (profileError) return jsonError(schemaError(profileError.message), 500);
     return NextResponse.json({ member: null, profile });
   }
 
@@ -155,7 +162,7 @@ export async function POST(request: NextRequest) {
     .select("*")
     .single();
 
-  if (profileError) return jsonError(profileError.message, 500);
+  if (profileError) return jsonError(schemaError(profileError.message), 500);
 
   return NextResponse.json({ member, profile });
 }

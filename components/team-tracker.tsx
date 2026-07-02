@@ -64,6 +64,10 @@ function profileRoleSummary(profile: UserProfile, profiles: UserProfile[]) {
   return roles.map((role) => role[0].toUpperCase() + role.slice(1)).join(" + ");
 }
 
+function profileLabel(profile: UserProfile) {
+  return profile.display_name || profile.email || "Unnamed user";
+}
+
 export default function TeamTracker() {
   const [data, setData] = useState<TeamData>(sampleData);
   const [sessionId, setSessionId] = useState(sampleData.sessions[0]?.id ?? "");
@@ -850,6 +854,33 @@ function MembersPanel({
     await remove("members", "members", member.id);
   }
 
+  async function deleteProfile(profile: UserProfile) {
+    if (!permission.isAdmin || !supabase) return;
+    setNotice("");
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      setNotice("Missing admin login session.");
+      return;
+    }
+
+    const response = await fetch("/api/admin/delete-profile", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ profileId: profile.id })
+    });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) {
+      setNotice(result.error ?? "Unable to delete admin account.");
+      return;
+    }
+    await remove("profiles", "profiles", profile.id);
+    setNotice(`${profileLabel(profile)} deleted.`);
+  }
+
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-ink/10 bg-white p-4">
@@ -928,8 +959,15 @@ function MembersPanel({
           <div className="grid gap-2 md:grid-cols-2">
             {data.profiles.filter((profile) => profile.role === "admin").map((adminProfile) => (
               <div key={adminProfile.id} className="rounded-md border border-ink/10 bg-paper p-3">
-                <div className="font-medium">{adminProfile.display_name}</div>
-                <div className="text-sm text-ink/60">{adminProfile.email ?? "No email stored"}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">{profileLabel(adminProfile)}</div>
+                    <div className="text-sm text-ink/60">{adminProfile.email ?? "No email stored"}</div>
+                  </div>
+                  <button className="focus-ring rounded-md border border-clay/30 bg-white p-2 text-clay hover:bg-clay hover:text-white" onClick={() => deleteProfile(adminProfile)} aria-label={`Delete ${profileLabel(adminProfile)}`}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -979,7 +1017,7 @@ function MembersPanel({
                   return (
                     <tr key={profile.id} className="bg-paper">
                       <td className="rounded-l-md px-3 py-3">
-                        <div className="font-medium">{profile.display_name}</div>
+                        <div className="font-medium">{profileLabel(profile)}</div>
                         <div className="text-xs text-ink/50">{profile.email ?? "No email stored"}</div>
                         <div className="text-xs text-moss">{profileRoleSummary(profile, data.profiles) || profile.role}</div>
                       </td>
