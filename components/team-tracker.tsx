@@ -56,6 +56,14 @@ function canEditMember(permission: Permission, memberId: string) {
   return permission.isAdmin || permission.memberId === memberId;
 }
 
+function profileRoleSummary(profile: UserProfile, profiles: UserProfile[]) {
+  const sameUserProfiles = profiles.filter((item) => (
+    item.display_name.trim().toLowerCase() === profile.display_name.trim().toLowerCase()
+  ));
+  const roles = Array.from(new Set(sameUserProfiles.map((item) => item.role)));
+  return roles.map((role) => role[0].toUpperCase() + role.slice(1)).join(" + ");
+}
+
 export default function TeamTracker() {
   const [data, setData] = useState<TeamData>(sampleData);
   const [sessionId, setSessionId] = useState(sampleData.sessions[0]?.id ?? "");
@@ -63,8 +71,11 @@ export default function TeamTracker() {
   const [activeTab, setActiveTab] = useState("attendance");
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [signupUsername, setSignupUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [signupConfirmPassword, setSignupConfirmPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isAuthed, setIsAuthed] = useState(!isSupabaseConfigured);
@@ -145,11 +156,49 @@ export default function TeamTracker() {
   }
 
   async function signUp() {
-    if (!supabase) return;
     setNotice("");
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) setNotice(error.message);
-    else setNotice("Account created. Admin still needs to link this user to a member profile.");
+    if (!signupUsername.trim()) {
+      setNotice("Username is required.");
+      return;
+    }
+    if (!email.trim()) {
+      setNotice("Email is required.");
+      return;
+    }
+    if (password.length < 6) {
+      setNotice("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== signupConfirmPassword) {
+      setNotice("Passwords do not match.");
+      return;
+    }
+
+    const response = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: signupUsername,
+        email,
+        password,
+        confirmPassword: signupConfirmPassword
+      })
+    });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) {
+      setNotice(result.error ?? "Unable to sign up.");
+      return;
+    }
+
+    if (!supabase) return;
+    const { data: loginData, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setAuthMode("login");
+      setNotice("Account created. Please login.");
+      return;
+    }
+    setIsAuthed(true);
+    await loadSupabaseData(loginData.user.id);
   }
 
   async function signOut() {
@@ -160,6 +209,8 @@ export default function TeamTracker() {
     setProfile(unlinkedProfile);
     setEmail("");
     setPassword("");
+    setSignupUsername("");
+    setSignupConfirmPassword("");
     setNewPassword("");
     setConfirmPassword("");
   }
@@ -297,16 +348,32 @@ export default function TeamTracker() {
             <div className="grid size-10 place-items-center rounded-md bg-moss text-white"><LogIn size={20} /></div>
             <div>
               <h1 className="text-xl font-semibold">Ex Senior Tracker</h1>
-              <p className="text-sm text-ink/60">Admin and member login</p>
+              <p className="text-sm text-ink/60">{authMode === "login" ? "Admin and member login" : "Member sign up"}</p>
             </div>
           </div>
           <div className="space-y-3">
+            {authMode === "signup" && (
+              <label>
+                <span className="mb-1 block text-xs text-ink/60">Username <span className="text-clay">*</span></span>
+                <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Your username" value={signupUsername} onChange={(event) => setSignupUsername(event.target.value)} />
+              </label>
+            )}
             <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} />
             <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-            <div className="grid grid-cols-2 gap-2">
-              <button className="focus-ring rounded-md bg-moss px-3 py-2 text-white" onClick={signIn}>Login</button>
-              <button className="focus-ring rounded-md border border-ink/15 px-3 py-2" onClick={signUp}>Sign up</button>
-            </div>
+            {authMode === "signup" && (
+              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Confirm password" type="password" value={signupConfirmPassword} onChange={(event) => setSignupConfirmPassword(event.target.value)} />
+            )}
+            {authMode === "login" ? (
+              <>
+                <button className="focus-ring w-full rounded-md bg-moss px-3 py-2 text-white" onClick={signIn}>Login</button>
+                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={() => { setNotice(""); setAuthMode("signup"); }}>Create member account</button>
+              </>
+            ) : (
+              <>
+                <button className="focus-ring w-full rounded-md bg-moss px-3 py-2 text-white" onClick={signUp}>Sign up as member</button>
+                <button className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" onClick={() => { setNotice(""); setAuthMode("login"); }}>Back to login</button>
+              </>
+            )}
             {notice && <p className="text-sm text-clay">{notice}</p>}
           </div>
         </section>
@@ -347,7 +414,7 @@ export default function TeamTracker() {
           </div>
           <div className="flex flex-wrap gap-2">
             <div className="flex items-center gap-2 rounded-md border border-ink/10 bg-white px-3 py-2 text-sm capitalize text-ink/70">
-              <Shield size={16} className="text-moss" /> {permission.isAdmin ? "Admin" : "Member"}
+              <Shield size={16} className="text-moss" /> {profileRoleSummary(profile, data.profiles) || (permission.isAdmin ? "Admin" : "Member")}
             </div>
             {!isSupabaseConfigured && (
               <select className="focus-ring rounded-md border border-ink/15 bg-white px-3 py-2 text-sm" value={profile.id} onChange={(event) => setProfile(data.profiles.find((item) => item.id === event.target.value) ?? data.profiles[0])}>
@@ -388,7 +455,7 @@ export default function TeamTracker() {
             <div className="mb-3 flex items-center gap-2"><Shield size={18} className="text-moss" /><h2 className="font-semibold">Current Access</h2></div>
             <div className="space-y-2 text-sm">
               <p><span className="text-ink/55">User:</span> {profile.display_name}</p>
-              <p><span className="text-ink/55">Role:</span> {profile.role}</p>
+              <p><span className="text-ink/55">Role:</span> {profileRoleSummary(profile, data.profiles) || profile.role}</p>
               <p className="text-ink/65">
                 {profile.id === "unlinked"
                   ? "This login is not linked to a member profile yet. Ask an admin to create the profile row."
@@ -576,10 +643,12 @@ function MembersPanel({
 
     const normalizedName = form.name.trim().toLowerCase();
     const normalizedGroup = form.group_name.trim().toLowerCase();
-    const localExisting = data.members.find((member) => (
-      member.name.trim().toLowerCase() === normalizedName &&
-      member.group_name.trim().toLowerCase() === normalizedGroup
-    ));
+    const localExisting = form.accountRole === "member"
+      ? data.members.find((member) => (
+        member.name.trim().toLowerCase() === normalizedName &&
+        member.group_name.trim().toLowerCase() === normalizedGroup
+      ))
+      : undefined;
 
     if (localExisting) {
       setSelectedMemberId(localExisting.id);
@@ -626,7 +695,7 @@ function MembersPanel({
       if (result.member) setSelectedMemberId(result.member.id);
       setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
       setSubmittedAdd(false);
-      setNotice("Member and login account created. User must reset password on first login.");
+      setNotice(`${form.accountRole === "admin" ? "Admin" : "Member"} login account created. User must reset password on first login.`);
       return;
     }
 
@@ -735,7 +804,7 @@ function MembersPanel({
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] border-separate border-spacing-y-2 text-sm">
               <thead className="text-left text-ink/55">
-                <tr><th className="px-3">Login</th><th>Display name</th><th>Role</th><th>Linked member</th><th>Action</th></tr>
+                <tr><th className="px-3">User</th><th>Display name</th><th>Role</th><th>Linked member</th><th>Action</th></tr>
               </thead>
               <tbody>
                 {data.profiles.map((profile) => {
@@ -743,8 +812,9 @@ function MembersPanel({
                   return (
                     <tr key={profile.id} className="bg-paper">
                       <td className="rounded-l-md px-3 py-3">
-                        <div className="font-medium">{profile.email ?? "No email stored"}</div>
-                        <div className="text-xs text-ink/50">{profile.user_id ? "Supabase Auth user" : "Demo profile"}</div>
+                        <div className="font-medium">{profile.display_name}</div>
+                        <div className="text-xs text-ink/50">{profile.email ?? "No email stored"}</div>
+                        <div className="text-xs text-moss">{profileRoleSummary(profile, data.profiles) || profile.role}</div>
                       </td>
                       <td>
                         <input className="focus-ring w-40 rounded-md border border-ink/15 bg-white px-2 py-1" value={draft.display_name} onChange={(event) => updateDraft(profile, { display_name: event.target.value })} />

@@ -55,40 +55,77 @@ export async function POST(request: NextRequest) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return jsonError("Member email is invalid.");
   if (defaultPassword.length < 6) return jsonError("Default password must be at least 6 characters.");
 
-  const { data: existingMembers, error: existingMemberError } = await adminClient
-    .from("members")
-    .select("*")
-    .ilike("name", name)
-    .ilike("group_name", groupName)
-    .limit(1);
+  const [
+    { data: existingMembers, error: existingMemberError },
+    { data: sameNameProfiles, error: sameNameError },
+    { data: sameEmailProfiles, error: sameEmailError }
+  ] = await Promise.all([
+    adminClient
+      .from("members")
+      .select("*")
+      .ilike("name", name)
+      .ilike("group_name", groupName)
+      .limit(1),
+    adminClient
+      .from("profiles")
+      .select("user_id,email,display_name,role")
+      .ilike("display_name", name),
+    adminClient
+      .from("profiles")
+      .select("user_id,email,display_name,role")
+      .ilike("email", email)
+  ]);
 
   if (existingMemberError) return jsonError(existingMemberError.message, 500);
+  if (sameNameError) return jsonError(sameNameError.message, 500);
+  if (sameEmailError) return jsonError(sameEmailError.message, 500);
+
+  const sameNameProfile = sameNameProfiles?.find((profile) => profile.display_name?.toLowerCase() === name.toLowerCase());
+  const sameEmailProfile = sameEmailProfiles?.find((profile) => profile.email?.toLowerCase() === email);
+
+  if (sameNameProfile && sameEmailProfile && sameNameProfile.user_id === sameEmailProfile.user_id) {
+    return jsonError("Username and email already exist. Please change both username and email.", 409);
+  }
+  if (sameEmailProfile) return jsonError("Email already exists. Please use another email.", 409);
+  if (accountRole === "member" && sameNameProfile) {
+    return jsonError("Username already exists. Please choose another username.", 409);
+  }
+
+  let userId: string | undefined;
+
+  const { data: createdUser, error: createUserError } = await adminClient.auth.admin.createUser({
+    email,
+    password: defaultPassword,
+    email_confirm: true,
+    user_metadata: { display_name: name }
+  });
+
+  if (createUserError) return jsonError(createUserError.message, 400);
+  userId = createdUser.user.id;
+
+  if (accountRole === "admin") {
+    const { data: profile, error: profileError } = await adminClient
+      .from("profiles")
+      .upsert({
+        user_id: userId,
+        member_id: null,
+        role: "admin",
+        display_name: name,
+        email,
+        require_password_reset: true
+      }, { onConflict: "user_id" })
+      .select("*")
+      .single();
+
+    if (profileError) return jsonError(profileError.message, 500);
+    return NextResponse.json({ member: null, profile });
+  }
+
   if (existingMembers?.length) {
     return NextResponse.json(
       { error: `${name} already exists in ${groupName}.`, member: existingMembers[0] },
       { status: 409 }
     );
-  }
-
-  let userId: string | undefined;
-  const { data: existingProfile } = await adminClient
-    .from("profiles")
-    .select("user_id")
-    .ilike("email", email)
-    .maybeSingle();
-
-  userId = existingProfile?.user_id ?? undefined;
-
-  if (!userId) {
-    const { data: createdUser, error: createUserError } = await adminClient.auth.admin.createUser({
-      email,
-      password: defaultPassword,
-      email_confirm: true,
-      user_metadata: { display_name: name }
-    });
-
-    if (createUserError) return jsonError(createUserError.message, 400);
-    userId = createdUser.user.id;
   }
 
   const { data: member, error: memberError } = await adminClient
