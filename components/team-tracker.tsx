@@ -44,8 +44,8 @@ const unlinkedProfile: UserProfile = {
   created_at: new Date().toISOString()
 };
 
-function id(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+function id(_prefix: string) {
+  return crypto.randomUUID();
 }
 
 function today() {
@@ -306,7 +306,7 @@ export default function TeamTracker() {
           </div>
 
           {activeTab === "attendance" && <AttendancePanel data={data} currentSession={currentSession} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
-          {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} remove={remove} setSelectedMemberId={setSelectedMemberId} />}
+          {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} remove={remove} setNotice={setNotice} setSelectedMemberId={setSelectedMemberId} />}
           {activeTab === "workout" && <WorkoutPanel data={data} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
           {activeTab === "reviews" && <ReviewsPanel data={data} selectedMemberId={selectedMemberId} setSelectedMemberId={setSelectedMemberId} permission={permission} persist={persist} />}
         </section>
@@ -459,12 +459,62 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
   );
 }
 
-function MembersPanel({ data, permission, persist, remove, setSelectedMemberId }: { data: TeamData; permission: Permission; persist: Persist; remove: <T extends keyof TeamData>(key: T, table: string, rowId: string) => Promise<void>; setSelectedMemberId: (value: string) => void }) {
+function MembersPanel({
+  data,
+  permission,
+  persist,
+  remove,
+  setNotice,
+  setSelectedMemberId
+}: {
+  data: TeamData;
+  permission: Permission;
+  persist: Persist;
+  remove: <T extends keyof TeamData>(key: T, table: string, rowId: string) => Promise<void>;
+  setNotice: (message: string) => void;
+  setSelectedMemberId: (value: string) => void;
+}) {
   const [form, setForm] = useState({ name: "", role: "Member", group_name: "General", phone: "" });
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
   async function addMember() {
     if (!permission.isAdmin || !form.name.trim()) return;
+    setNotice("");
+    const normalizedName = form.name.trim().toLowerCase();
+    const normalizedGroup = form.group_name.trim().toLowerCase();
+    const localExisting = data.members.find((member) => (
+      member.name.trim().toLowerCase() === normalizedName &&
+      member.group_name.trim().toLowerCase() === normalizedGroup
+    ));
+
+    if (localExisting) {
+      setSelectedMemberId(localExisting.id);
+      setNotice(`${localExisting.name} already exists in ${localExisting.group_name}. Existing member selected.`);
+      return;
+    }
+
+    if (supabase && isSupabaseConfigured) {
+      const { data: existingMembers, error } = await supabase
+        .from("members")
+        .select("*")
+        .ilike("name", form.name.trim())
+        .ilike("group_name", form.group_name.trim())
+        .limit(1);
+
+      if (error) {
+        setNotice(error.message);
+        return;
+      }
+
+      const existing = existingMembers?.[0] as Member | undefined;
+      if (existing) {
+        await persist("members", "members", existing);
+        setSelectedMemberId(existing.id);
+        setNotice(`${existing.name} already exists in Supabase. Existing member selected.`);
+        return;
+      }
+    }
+
     const row: Member = { id: id("member"), ...form, active: true, created_at: new Date().toISOString() };
     await persist("members", "members", row);
     setSelectedMemberId(row.id);
