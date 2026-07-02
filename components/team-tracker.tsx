@@ -30,7 +30,7 @@ import {
   WorkoutRecord
 } from "@/lib/types";
 
-type Persist = <T extends keyof TeamData>(key: T, table: string, row: TeamData[T][number]) => Promise<void>;
+type Persist = <T extends keyof TeamData>(key: T, table: string, row: TeamData[T][number], options?: { skipRemote?: boolean }) => Promise<void>;
 type Permission = { profile: UserProfile; isAdmin: boolean; memberId?: string };
 
 const storageKey = "ex-senior-tracker-demo";
@@ -292,8 +292,8 @@ export default function TeamTracker() {
     setNotice("Password updated.");
   }
 
-  async function persist<T extends keyof TeamData>(key: T, table: string, row: TeamData[T][number]) {
-    if (supabase && isSupabaseConfigured && isAuthed) {
+  async function persist<T extends keyof TeamData>(key: T, table: string, row: TeamData[T][number], options?: { skipRemote?: boolean }) {
+    if (!options?.skipRemote && supabase && isSupabaseConfigured && isAuthed) {
       const { error } = await supabase.from(table).upsert(row as never);
       if (error) {
         setNotice(error.message);
@@ -487,7 +487,7 @@ export default function TeamTracker() {
             <Stat icon={<Dumbbell size={18} />} label={permission.isAdmin ? "Avg workout" : "My review"} value={permission.isAdmin ? summary.workoutAverage : `${summary.reviewScore}/100`} />
           </div>
 
-          {activeTab === "attendance" && <AttendancePanel data={data} currentSession={currentSession} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
+          {activeTab === "attendance" && <AttendancePanel data={data} currentSession={currentSession} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} setNotice={setNotice} />}
           {activeTab === "members" && <MembersPanel data={data} permission={permission} persist={persist} remove={remove} setNotice={setNotice} setSelectedMemberId={setSelectedMemberId} />}
           {activeTab === "workout" && <WorkoutPanel data={data} sessionId={sessionId} setSessionId={setSessionId} permission={permission} persist={persist} />}
           {activeTab === "reviews" && <ReviewsPanel data={data} selectedMemberId={selectedMemberId} setSelectedMemberId={setSelectedMemberId} permission={permission} persist={persist} />}
@@ -559,13 +559,14 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   );
 }
 
-function AttendancePanel({ data, currentSession, sessionId, setSessionId, permission, persist }: {
+function AttendancePanel({ data, currentSession, sessionId, setSessionId, permission, persist, setNotice }: {
   data: TeamData;
   currentSession?: TrainingSession;
   sessionId: string;
   setSessionId: (value: string) => void;
   permission: Permission;
   persist: Persist;
+  setNotice: (message: string) => void;
 }) {
   const [newSession, setNewSession] = useState({ title: "", session_date: today(), start_time: "20:00", end_time: "22:00", late_after_minutes: 10, notes: "" });
   const [isAddSessionOpen, setIsAddSessionOpen] = useState(false);
@@ -590,6 +591,36 @@ function AttendancePanel({ data, currentSession, sessionId, setSessionId, permis
       reason: reason ?? existing?.reason ?? "",
       created_at: existing?.created_at ?? new Date().toISOString()
     };
+    if (supabase && isSupabaseConfigured) {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setNotice("Missing login session.");
+        return;
+      }
+
+      const response = await fetch("/api/attendance/set", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          memberId,
+          sessionId,
+          status,
+          reason: row.reason
+        })
+      });
+      const result = await response.json() as { error?: string; record?: AttendanceRecord };
+      if (!response.ok || !result.record) {
+        setNotice(result.error ?? "Unable to update attendance.");
+        return;
+      }
+      setNotice("");
+      await persist("attendance", "attendance_records", result.record, { skipRemote: true });
+      return;
+    }
     await persist("attendance", "attendance_records", row);
   }
 

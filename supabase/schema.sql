@@ -157,10 +157,21 @@ language sql
 security definer
 set search_path = public
 as $$
-  select member_id
-  from profiles
-  where user_id = auth.uid() and member_id is not null
-  limit 1;
+  select coalesce(
+    (
+      select member_id
+      from profiles
+      where user_id = auth.uid() and member_id is not null
+      limit 1
+    ),
+    (
+      select members.id
+      from profiles
+      join members on lower(trim(members.name)) = lower(trim(profiles.display_name))
+      where profiles.user_id = auth.uid()
+      limit 1
+    )
+  );
 $$;
 
 create or replace function handle_new_user()
