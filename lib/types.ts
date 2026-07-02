@@ -8,6 +8,7 @@ export type UserProfile = {
   role: UserRole;
   display_name: string;
   email?: string;
+  require_password_reset?: boolean;
   created_at: string;
 };
 

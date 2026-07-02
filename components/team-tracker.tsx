@@ -65,6 +65,8 @@ export default function TeamTracker() {
   const [notice, setNotice] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [isAuthed, setIsAuthed] = useState(!isSupabaseConfigured);
   const [profile, setProfile] = useState<UserProfile>(sampleData.profiles[0]);
 
@@ -158,6 +160,50 @@ export default function TeamTracker() {
     setProfile(unlinkedProfile);
     setEmail("");
     setPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+  }
+
+  async function resetOwnPassword() {
+    if (!supabase || !profile.user_id) return;
+    setNotice("");
+    if (newPassword.length < 6) {
+      setNotice("New password must be at least 6 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setNotice("Passwords do not match.");
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) {
+      setNotice("Missing login session.");
+      return;
+    }
+
+    const response = await fetch("/api/account/complete-password-reset", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const result = await response.json() as { error?: string };
+    if (!response.ok) {
+      setNotice(result.error ?? "Password was updated, but profile reset flag could not be cleared.");
+      return;
+    }
+
+    const updatedProfile = { ...profile, require_password_reset: false };
+    setProfile(updatedProfile);
+    setNewPassword("");
+    setConfirmPassword("");
+    setNotice("Password updated.");
   }
 
   async function persist<T extends keyof TeamData>(key: T, table: string, row: TeamData[T][number]) {
@@ -268,6 +314,29 @@ export default function TeamTracker() {
     );
   }
 
+  if (isSupabaseConfigured && isAuthed && profile.require_password_reset) {
+    return (
+      <main className="flex min-h-screen items-center justify-center px-4">
+        <section className="w-full max-w-sm rounded-lg border border-ink/10 bg-white p-5 shadow-sm">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-md bg-moss text-white"><Shield size={20} /></div>
+            <div>
+              <h1 className="text-xl font-semibold">Reset Password</h1>
+              <p className="text-sm text-ink/60">Set your own password before continuing</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="New password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Confirm password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            <button className="focus-ring w-full rounded-md bg-moss px-3 py-2 text-white" onClick={resetOwnPassword}>Update Password</button>
+            <button className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-ink/15 px-3 py-2" onClick={signOut}><LogOut size={16} /> Logout</button>
+            {notice && <p className="text-sm text-clay">{notice}</p>}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen">
       <header className="border-b border-ink/10 bg-white/80 backdrop-blur">
@@ -277,6 +346,9 @@ export default function TeamTracker() {
             <p className="text-sm text-ink/60">Same team view, role-based editing for admin and members</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-2 rounded-md border border-ink/10 bg-white px-3 py-2 text-sm capitalize text-ink/70">
+              <Shield size={16} className="text-moss" /> {permission.isAdmin ? "Admin" : "Member"}
+            </div>
             {!isSupabaseConfigured && (
               <select className="focus-ring rounded-md border border-ink/15 bg-white px-3 py-2 text-sm" value={profile.id} onChange={(event) => setProfile(data.profiles.find((item) => item.id === event.target.value) ?? data.profiles[0])}>
                 {data.profiles.map((item) => <option key={item.id} value={item.id}>{item.display_name} · {item.role}</option>)}
@@ -474,12 +546,34 @@ function MembersPanel({
   setNotice: (message: string) => void;
   setSelectedMemberId: (value: string) => void;
 }) {
-  const [form, setForm] = useState({ name: "", role: "Member", group_name: "General", phone: "" });
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    defaultPassword: "ChangeMe123",
+    role: "Drummer",
+    group_name: "General",
+    accountRole: "member" as UserProfile["role"]
+  });
+  const [submittedAdd, setSubmittedAdd] = useState(false);
   const [profileDrafts, setProfileDrafts] = useState<Record<string, Pick<UserProfile, "display_name" | "role" | "member_id">>>({});
 
   async function addMember() {
-    if (!permission.isAdmin || !form.name.trim()) return;
+    if (!permission.isAdmin) return;
+    setSubmittedAdd(true);
     setNotice("");
+    if (!form.name.trim()) {
+      setNotice("Member name is required.");
+      return;
+    }
+    if (isSupabaseConfigured && !form.email.trim()) {
+      setNotice("Member email is required.");
+      return;
+    }
+    if (isSupabaseConfigured && form.defaultPassword.length < 6) {
+      setNotice("Default password must be at least 6 characters.");
+      return;
+    }
+
     const normalizedName = form.name.trim().toLowerCase();
     const normalizedGroup = form.group_name.trim().toLowerCase();
     const localExisting = data.members.find((member) => (
@@ -494,31 +588,53 @@ function MembersPanel({
     }
 
     if (supabase && isSupabaseConfigured) {
-      const { data: existingMembers, error } = await supabase
-        .from("members")
-        .select("*")
-        .ilike("name", form.name.trim())
-        .ilike("group_name", form.group_name.trim())
-        .limit(1);
-
-      if (error) {
-        setNotice(error.message);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        setNotice("Missing admin login session.");
         return;
       }
 
-      const existing = existingMembers?.[0] as Member | undefined;
-      if (existing) {
-        await persist("members", "members", existing);
-        setSelectedMemberId(existing.id);
-        setNotice(`${existing.name} already exists in Supabase. Existing member selected.`);
+      const response = await fetch("/api/admin/create-member", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          defaultPassword: form.defaultPassword,
+          memberRole: form.role,
+          groupName: form.group_name,
+          accountRole: form.accountRole
+        })
+      });
+      const result = await response.json() as { error?: string; member?: Member; profile?: UserProfile };
+
+      if (!response.ok) {
+        if (response.status === 409 && result.member) {
+          await persist("members", "members", result.member);
+          setSelectedMemberId(result.member.id);
+        }
+        setNotice(result.error ?? "Unable to create member.");
         return;
       }
+
+      if (result.member) await persist("members", "members", result.member);
+      if (result.profile) await persist("profiles", "profiles", result.profile);
+      if (result.member) setSelectedMemberId(result.member.id);
+      setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
+      setSubmittedAdd(false);
+      setNotice("Member and login account created. User must reset password on first login.");
+      return;
     }
 
-    const row: Member = { id: id("member"), ...form, active: true, created_at: new Date().toISOString() };
+    const row: Member = { id: id("member"), name: form.name, role: form.role, group_name: form.group_name, active: true, created_at: new Date().toISOString() };
     await persist("members", "members", row);
     setSelectedMemberId(row.id);
-    setForm({ name: "", role: "Member", group_name: "General", phone: "" });
+    setForm({ name: "", email: "", defaultPassword: "ChangeMe123", role: "Drummer", group_name: "General", accountRole: "member" });
+    setSubmittedAdd(false);
   }
 
   function draftFor(profile: UserProfile) {
@@ -563,11 +679,35 @@ function MembersPanel({
       <section className="rounded-lg border border-ink/10 bg-white p-4">
         <div className="mb-4 flex items-center gap-2"><Users size={18} className="text-moss" /><h2 className="font-semibold">Member Management</h2></div>
         {permission.isAdmin && (
-          <div className="mb-4 grid gap-2 md:grid-cols-5">
-            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2 md:col-span-2" placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Role" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
-            <input className="focus-ring rounded-md border border-ink/15 px-3 py-2" placeholder="Group" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
-            <button className="focus-ring flex items-center justify-center gap-2 rounded-md bg-moss px-3 py-2 text-white" onClick={addMember}><Plus size={16} /> Member</button>
+          <div className="mb-4 grid gap-2 md:grid-cols-6">
+            <label className="md:col-span-2">
+              <span className="mb-1 block text-xs text-ink/60">Name <span className="text-clay">*</span></span>
+              <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && !form.name.trim() ? "border-clay" : "border-ink/15"}`} placeholder="Member name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            </label>
+            <label className="md:col-span-2">
+              <span className="mb-1 block text-xs text-ink/60">Email {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+              <input className={`focus-ring w-full rounded-md border px-3 py-2 ${submittedAdd && isSupabaseConfigured && !form.email.trim() ? "border-clay" : "border-ink/15"}`} placeholder="member@email.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            </label>
+            <label>
+              <span className="mb-1 block text-xs text-ink/60">Default password {isSupabaseConfigured && <span className="text-clay">*</span>}</span>
+              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Default password" value={form.defaultPassword} onChange={(event) => setForm({ ...form, defaultPassword: event.target.value })} />
+            </label>
+            <label>
+              <span className="mb-1 block text-xs text-ink/60">Account</span>
+              <select className="focus-ring w-full rounded-md border border-ink/15 bg-white px-3 py-2" value={form.accountRole} onChange={(event) => setForm({ ...form, accountRole: event.target.value as UserProfile["role"] })}>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label>
+              <span className="mb-1 block text-xs text-ink/60">Member role</span>
+              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="Drummer" value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value })} />
+            </label>
+            <label>
+              <span className="mb-1 block text-xs text-ink/60">Group</span>
+              <input className="focus-ring w-full rounded-md border border-ink/15 px-3 py-2" placeholder="General" value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
+            </label>
+            <button className="focus-ring flex items-center justify-center gap-2 self-end rounded-md bg-moss px-3 py-2 text-white md:col-span-2" onClick={addMember}><Plus size={16} /> Add Member</button>
           </div>
         )}
         <div className="grid gap-2 md:grid-cols-2">

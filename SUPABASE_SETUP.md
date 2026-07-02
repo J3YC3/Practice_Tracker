@@ -8,11 +8,14 @@
 6. Fill in:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` for admin-created login accounts
 7. Restart the dev server with `npm run dev`.
 
 When Supabase env vars are present, the app uses real login/logout. The demo role selector only appears when Supabase is not configured.
 
 New signups automatically get a `profiles` row as a `member`. Admin can link that login profile to a member record inside `Members > Login Access Linking`.
+
+Admin-created accounts use a default password and force the user to set a new password on first login. `SUPABASE_SERVICE_ROLE_KEY` must be added only in local `.env.local` and Vercel Environment Variables. Do not expose it in browser code.
 
 Roles:
 
